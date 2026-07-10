@@ -13,7 +13,7 @@ class MidtransService
     public function __construct()
     {
         $this->serverKey = config('services.midtrans.server_key');
-        $this->isProduction = (bool) config('services.midtrans.is_production');
+        $this->isProduction = config('services.midtrans.is_production');
     }
 
     protected function snapBaseUrl(): string

@@ -13,8 +13,8 @@ class MidtransDpController extends Controller
 {
     private function setupMidtrans(): void
     {
-        \Midtrans\Config::$serverKey    = config('midtrans.server_key');
-        \Midtrans\Config::$isProduction = config('midtrans.is_production');
+        \Midtrans\Config::$serverKey    = config('services.midtrans.server_key');
+        \Midtrans\Config::$isProduction = config('services.midtrans.is_production');
         \Midtrans\Config::$isSanitized  = true;
         \Midtrans\Config::$is3ds        = true;
     }
@@ -73,23 +73,35 @@ class MidtransDpController extends Controller
 
         $orderId = $pesanan->nomor_invoice . '-DP-' . time();
 
+        $chargePayload = [
+            'transaction_details' => [
+                'order_id'     => $orderId,
+                'gross_amount' => $nominalDp,
+            ],
+            'customer_details' => [
+                'first_name' => $user->name,
+                'email'      => $user->email,
+            ],
+            'item_details' => $itemDetails,
+            'callbacks'    => [
+                'finish'  => route('customer.pesanan.detail', $id),
+                'error'   => route('customer.pesanan.detail', $id),
+                'pending' => route('customer.pesanan.detail', $id),
+            ],
+        ];
+
+        // DEBUG: dicatat sementara supaya bisa dilampirkan ke tiket support Midtrans.
+        // Server key TIDAK ikut tercatat di sini karena tidak pernah dimasukkan ke $chargePayload.
+        Log::info('Midtrans Full Charge Request (buatToken DP)', [
+            'endpoint' => \Midtrans\Config::$isProduction
+                ? 'https://app.midtrans.com/snap/v1/transactions'
+                : 'https://app.sandbox.midtrans.com/snap/v1/transactions',
+            'is_production' => \Midtrans\Config::$isProduction,
+            'payload' => $chargePayload,
+        ]);
+
         try {
-            $snapToken = \Midtrans\Snap::getSnapToken([
-                'transaction_details' => [
-                    'order_id'     => $orderId,
-                    'gross_amount' => $nominalDp,
-                ],
-                'customer_details' => [
-                    'first_name' => $user->name,
-                    'email'      => $user->email,
-                ],
-                'item_details' => $itemDetails,
-                'callbacks'    => [
-                    'finish'  => route('customer.pesanan.detail', $id),
-                    'error'   => route('customer.pesanan.detail', $id),
-                    'pending' => route('customer.pesanan.detail', $id),
-                ],
-            ]);
+            $snapToken = \Midtrans\Snap::getSnapToken($chargePayload);
 
             return response()->json([
                 'snap_token' => $snapToken,
@@ -97,6 +109,10 @@ class MidtransDpController extends Controller
                 'nominal_dp' => $nominalDp,
             ]);
         } catch (\Exception $e) {
+            Log::error('Midtrans Full Charge Request GAGAL (buatToken DP)', [
+                'payload' => $chargePayload,
+                'error_message' => $e->getMessage(),
+            ]);
             return response()->json(['error' => 'Gagal membuat token: ' . $e->getMessage()], 500);
         }
     }
@@ -214,23 +230,34 @@ class MidtransDpController extends Controller
 
         $orderId = $pesanan->nomor_invoice . '-LUNAS-' . time();
 
+        $chargePayload = [
+            'transaction_details' => [
+                'order_id'     => $orderId,
+                'gross_amount' => $nominalPelunasan,
+            ],
+            'customer_details' => [
+                'first_name' => $user->name,
+                'email'      => $user->email,
+            ],
+            'item_details' => $finalItems,
+            'callbacks'    => [
+                'finish'  => route('customer.pesanan.detail', $id),
+                'error'   => route('customer.pesanan.detail', $id),
+                'pending' => route('customer.pesanan.detail', $id),
+            ],
+        ];
+
+        // DEBUG: dicatat sementara supaya bisa dilampirkan ke tiket support Midtrans.
+        Log::info('Midtrans Full Charge Request (buatToken Pelunasan)', [
+            'endpoint' => \Midtrans\Config::$isProduction
+                ? 'https://app.midtrans.com/snap/v1/transactions'
+                : 'https://app.sandbox.midtrans.com/snap/v1/transactions',
+            'is_production' => \Midtrans\Config::$isProduction,
+            'payload' => $chargePayload,
+        ]);
+
         try {
-            $snapToken = \Midtrans\Snap::getSnapToken([
-                'transaction_details' => [
-                    'order_id'     => $orderId,
-                    'gross_amount' => $nominalPelunasan,
-                ],
-                'customer_details' => [
-                    'first_name' => $user->name,
-                    'email'      => $user->email,
-                ],
-                'item_details' => $finalItems,
-                'callbacks'    => [
-                    'finish'  => route('customer.pesanan.detail', $id),
-                    'error'   => route('customer.pesanan.detail', $id),
-                    'pending' => route('customer.pesanan.detail', $id),
-                ],
-            ]);
+            $snapToken = \Midtrans\Snap::getSnapToken($chargePayload);
 
             return response()->json([
                 'snap_token'       => $snapToken,
@@ -238,6 +265,10 @@ class MidtransDpController extends Controller
                 'nominal_pelunasan' => $nominalPelunasan,
             ]);
         } catch (\Exception $e) {
+            Log::error('Midtrans Full Charge Request GAGAL (buatToken Pelunasan)', [
+                'payload' => $chargePayload,
+                'error_message' => $e->getMessage(),
+            ]);
             return response()->json(['error' => 'Gagal membuat token pelunasan: ' . $e->getMessage()], 500);
         }
     }
@@ -308,7 +339,7 @@ class MidtransDpController extends Controller
             return response()->json(['error' => 'Payload tidak lengkap.'], 400);
         }
 
-        $serverKey          = config('midtrans.server_key');
+        $serverKey          = config('services.midtrans.server_key');
         $expectedSignature  = hash('sha512', $orderId . $statusCode . $grossAmount . $serverKey);
 
         if (!hash_equals($expectedSignature, (string) $signatureKey)) {

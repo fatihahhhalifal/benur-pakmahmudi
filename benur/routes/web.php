@@ -5,8 +5,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\StokBenurController; 
 use App\Http\Controllers\BiayaOperasionalController;
 use App\Http\Controllers\KeranjangController; 
-use App\Http\Controllers\Customer\CheckoutController;
-use App\Http\Controllers\Customer\MidtransDpController; 
+use App\Http\Controllers\Customer\CheckoutController; 
 use App\Http\Controllers\Admin\LaporanKeuanganController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\PengaturanTambakController; 
@@ -107,10 +106,10 @@ Route::middleware(['auth', 'role:admin,pemilik,operator'])->group(function () {
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/pesanan', [AdminPesananController::class, 'index'])->name('pesanan.index');
+        Route::post('/pesanan/{id}/verifikasi-dp', [AdminPesananController::class, 'verifikasiDp'])->name('pesanan.verifikasi-dp');
         Route::post('/pesanan/{id}/batal', [AdminPesananController::class, 'batalkanOlehAdmin'])->name('pesanan.batal');
         
         // Rute pemisahan status operasional: Muat, Kalkulasi Admin, dan Validasi Pembayaran
-        // (Verifikasi DP manual sudah dihapus — DP sepenuhnya diverifikasi otomatis oleh Midtrans)
         Route::post('/pesanan/{id}/input-muat', [AdminPesananController::class, 'inputMuat'])->name('pesanan.input-muat');
         Route::post('/pesanan/{id}/kalkulasi-final', [AdminPesananController::class, 'kalkulasiFinal'])->name('pesanan.kalkulasi-final');
         Route::post('/pesanan/{id}/validasi-pelunasan', [AdminPesananController::class, 'validasiPelunasan'])->name('pesanan.validasi-pelunasan');
@@ -128,36 +127,32 @@ Route::middleware(['auth', 'role:customer'])->group(function () {
     // Katalog Live Read & Beli Langsung (Checkout Bypass)
     Route::get('/katalog', [KatalogController::class, 'index'])->name('customer.katalog');
     Route::get('/katalog/{siklus_id}', [KatalogController::class, 'show'])->name('customer.katalog.show');
-    Route::post('/katalog/checkout', [KatalogController::class, 'checkout'])->name('customer.katalog.checkout');
- 
+    Route::post('/katalog/checkout', [KatalogController::class, 'checkout'])->name('customer.katalog.checkout'); 
+    
     // Keranjang Belanja Sementara
     Route::get('/keranjang', [KeranjangController::class, 'index'])->name('customer.keranjang');
     Route::post('/keranjang/add', [KeranjangController::class, 'addToCart'])->name('customer.keranjang.add');
     Route::post('/keranjang/update', [KeranjangController::class, 'updateQuantity'])->name('customer.keranjang.update');
     Route::delete('/keranjang/{id}', [KeranjangController::class, 'destroy'])->name('customer.keranjang.destroy');
- 
+
     // Checkout Integrasi dari Keranjang & Beli Langsung
     Route::post('/checkout/init', [CheckoutController::class, 'initCheckout'])->name('customer.checkout.init');
     Route::get('/checkout', [CheckoutController::class, 'index'])->name('customer.checkout.index');
     Route::post('/checkout/process', [CheckoutController::class, 'processPayment'])->name('customer.checkout.process');
- 
+
     // Timeline & Detail Pelacak Pesanan Saya
     Route::get('/pesanan-saya', [KatalogController::class, 'riwayatPesanan'])->name('customer.pesanan.index');
     Route::get('/pesanan-saya/{id}', [KatalogController::class, 'detailPesanan'])->name('customer.pesanan.detail');
     Route::post('/pesanan-saya/{id}/batal', [KatalogController::class, 'batalkanOlehCustomer'])->name('customer.pesanan.batal');
- 
-    // MIDTRANS — DP (20%)
-    Route::post('/pesanan-saya/{id}/midtrans/token', [MidtransDpController::class, 'buatToken'])->name('customer.pesanan.midtrans.token');
-    Route::post('/pesanan-saya/{id}/midtrans/cek-status', [MidtransDpController::class, 'cekStatus'])->name('customer.pesanan.midtrans.cekstatus');
- 
-    // MIDTRANS — Pelunasan (setelah kalkulasi admin)
-    Route::post('/pesanan-saya/{id}/midtrans/token-pelunasan', [MidtransDpController::class, 'buatTokenPelunasan'])->name('customer.pesanan.midtrans.token.pelunasan');
-    Route::post('/pesanan-saya/{id}/midtrans/cek-status-pelunasan', [MidtransDpController::class, 'cekStatusPelunasan'])->name('customer.pesanan.midtrans.cekstatus.pelunasan');
- 
+    
+    // Rute penyelesaian transaksi unggahan pelunasan
+    Route::post('/pesanan-saya/{id}/pelunasan', [KatalogController::class, 'uploadPelunasan'])->name('customer.pesanan.pelunasan');
+    
     // Cetak Dokumen Finansial
     Route::get('/pesanan-saya/{id}/invoice', [PesananController::class, 'cetakInvoice'])->name('customer.pesanan.invoice');
     Route::get('/pesanan-saya/{id}/surat-jalan', [PesananController::class, 'cetakSuratJalan'])->name('customer.pesanan.suratjalan');
 });
+
 // =========================================================================
 // 6. ROUTE PROFILE UNIVERSAL
 // =========================================================================
@@ -167,8 +162,4 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::post('/midtrans/notification', [MidtransDpController::class, 'notificationHandler'])
-    ->name('midtrans.notification');
-
 require __DIR__.'/auth.php';
-
