@@ -62,7 +62,7 @@ class MidtransDpController extends Controller
                 'id'       => 'DP-' . $d->id,
                 'price'    => (int) round($subtotal * 0.2),
                 'quantity' => 1,
-                'name'     => 'DP 20% - ' . ($d->nama_kolam ?? 'Kolam') . ' (' . number_format($totalEkor, 0, ',', '.') . ' Ekor)',
+                'name'     => \Illuminate\Support\Str::limit('DP 20% - ' . ($d->nama_kolam ?? 'Kolam') . ' (' . number_format($totalEkor, 0, ',', '.') . ' Ekor)', 50),
             ];
         }
 
@@ -203,7 +203,7 @@ class MidtransDpController extends Controller
                 'id'       => 'LUNAS-' . ($i + 1),
                 'price'    => (int) round($nominalPelunasan * $proporsi),
                 'quantity' => 1,
-                'name'     => 'Pelunasan - ' . $item['nama_kolam'] . ' (' . number_format($item['total_ekor'], 0, ',', '.') . ' Ekor)',
+                'name'     => \Illuminate\Support\Str::limit('Pelunasan - ' . $item['nama_kolam'] . ' (' . number_format($item['total_ekor'], 0, ',', '.') . ' Ekor)', 50),
             ];
         }
 
