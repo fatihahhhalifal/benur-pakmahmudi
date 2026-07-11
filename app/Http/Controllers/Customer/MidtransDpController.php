@@ -15,7 +15,7 @@ class MidtransDpController extends Controller
     {
         \Midtrans\Config::$serverKey    = config('services.midtrans.server_key');
         \Midtrans\Config::$clientKey    = config('services.midtrans.client_key');
-        \Midtrans\Config::$isProduction = false;
+        \Midtrans\Config::$isProduction = (bool) config('services.midtrans.is_production', false);
         \Midtrans\Config::$isSanitized  = true;
         \Midtrans\Config::$is3ds        = true;
     }
@@ -320,6 +320,10 @@ class MidtransDpController extends Controller
             return response()->json(['success' => false, 'message' => 'Pembayaran masih diproses.']);
 
         } catch (\Exception $e) {
+            Log::info('cekStatus dipanggil', [
+                'order_id' => $orderId,
+                'pesanan_id' => $id,
+            ]);
             return response()->json(['error' => 'Gagal cek status pelunasan: ' . $e->getMessage()], 500);
         }
     }

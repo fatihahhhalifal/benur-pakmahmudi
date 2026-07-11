@@ -477,6 +477,22 @@
                      x-data="{
                          loading: false,
                          errorMsg: '',
+                         cekStatus(orderId) {
+                             fetch('{{ route('customer.pesanan.midtrans.cekstatus', $pesanan->id) }}', {
+                                 method: 'POST',
+                                 headers: {
+                                     'Content-Type': 'application/json',
+                                     'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                                 },
+                                 body: JSON.stringify({ order_id: orderId })
+                             })
+                             .then(r => r.json())
+                             .then(res => {
+                                 if (res.redirect) window.location.href = res.redirect;
+                                 else window.location.reload();
+                             })
+                             .catch(() => window.location.reload());
+                         },
                          bayarMidtrans() {
                              this.loading = true;
                              this.errorMsg = '';
@@ -496,22 +512,10 @@
                                  }
                                  window.snap.pay(data.snap_token, {
                                      onSuccess: (result) => {
-                                         fetch('{{ route('customer.pesanan.midtrans.cekstatus', $pesanan->id) }}', {
-                                             method: 'POST',
-                                             headers: {
-                                                 'Content-Type': 'application/json',
-                                                 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
-                                             },
-                                             body: JSON.stringify({ order_id: result.order_id })
-                                         })
-                                         .then(r => r.json())
-                                         .then(res => {
-                                             if (res.redirect) window.location.href = res.redirect;
-                                             else window.location.reload();
-                                         });
+                                         this.cekStatus(result.order_id);
                                      },
                                      onPending: (result) => {
-                                         window.location.reload();
+                                         this.cekStatus(result.order_id);
                                      },
                                      onError: (result) => {
                                          this.errorMsg = 'Pembayaran gagal. Silakan coba lagi.';
@@ -569,6 +573,22 @@
                              x-data="{
                                  loading: false,
                                  errorMsg: '',
+                                 cekStatusPelunasan(orderId) {
+                                     fetch('{{ route('customer.pesanan.midtrans.cekstatus.pelunasan', $pesanan->id) }}', {
+                                         method: 'POST',
+                                         headers: {
+                                             'Content-Type': 'application/json',
+                                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                                         },
+                                         body: JSON.stringify({ order_id: orderId })
+                                     })
+                                     .then(r => r.json())
+                                     .then(res => {
+                                         if (res.redirect) window.location.href = res.redirect;
+                                         else window.location.reload();
+                                     })
+                                     .catch(() => window.location.reload());
+                                 },
                                  bayarPelunasan() {
                                      this.loading = true;
                                      this.errorMsg = '';
@@ -585,21 +605,11 @@
                                          if (data.error) { this.errorMsg = data.error; return; }
                                          window.snap.pay(data.snap_token, {
                                              onSuccess: (result) => {
-                                                 fetch('{{ route('customer.pesanan.midtrans.cekstatus.pelunasan', $pesanan->id) }}', {
-                                                     method: 'POST',
-                                                     headers: {
-                                                         'Content-Type': 'application/json',
-                                                         'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
-                                                     },
-                                                     body: JSON.stringify({ order_id: result.order_id })
-                                                 })
-                                                 .then(r => r.json())
-                                                 .then(res => {
-                                                     if (res.redirect) window.location.href = res.redirect;
-                                                     else window.location.reload();
-                                                 });
+                                                 this.cekStatusPelunasan(result.order_id);
                                              },
-                                             onPending: () => { window.location.reload(); },
+                                             onPending: (result) => {
+                                                 this.cekStatusPelunasan(result.order_id);
+                                             },
                                              onError: () => { this.errorMsg = 'Pembayaran gagal. Silakan coba lagi.'; },
                                              onClose: () => { this.loading = false; }
                                          });
@@ -754,10 +764,10 @@
     </div>
 </div>
 @if(in_array($pesanan->status, ['pending', 'menunggu_pelunasan']))
-<script src="{{ config('midtrans.is_production')
+<script src="{{ config('services.midtrans.is_production')
     ? 'https://app.midtrans.com/snap/snap.js'
     : 'https://app.sandbox.midtrans.com/snap/snap.js' }}"
-    data-client-key="{{ config('midtrans.client_key') }}">
+    data-client-key="{{ config('services.midtrans.client_key') }}">
 </script>
 @endif
 </x-customer-layout>
