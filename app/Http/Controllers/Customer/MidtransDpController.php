@@ -411,7 +411,6 @@ class MidtransDpController extends Controller
             'nominal_dp_dibayar' => $grossAmount,
             'is_harga_dikunci'   => true,
             'waktu_kunci_dp'     => now(),
-            'catatan_dp'         => 'Midtrans (' . $paymentType . ') | ' . $orderId,
             'keterangan_batal'   => null,
             'updated_at'         => now(),
         ]);
@@ -457,7 +456,6 @@ class MidtransDpController extends Controller
         DB::table('pesanan')->where('id', $pesanan->id)->update([
             'status'                => 'selesai',
             'waktu_pelunasan_final' => now(),
-            'catatan_pelunasan'     => 'Midtrans (' . $paymentType . ') | ' . $orderId,
             'updated_at'            => now(),
         ]);
 
