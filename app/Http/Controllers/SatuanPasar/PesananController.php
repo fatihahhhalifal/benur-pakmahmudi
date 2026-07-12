@@ -52,12 +52,11 @@ class PesananController extends Controller
                 'master_kolam.id as kolam_id',
                 'jenis_benur.nama as nama_jenis',
                 'ukuran_benur.ukuran as label_ukuran',
-                'grade_benur.nama as nama_grade',
+                'grade_benur.nama_grade as nama_grade',
                 DB::raw('DATEDIFF(NOW(), siklus_kolam.waktu_tabur) as live_doc'),
                 'siklus_kolam.stok_tersedia',
             );
 
-        // Operator hanya lihat status proses + riwayat yang sudah dikerjakannya
         if ($user->role === 'operator') {
             $query->whereIn('pesanan.status', [
                 'proses',
@@ -74,7 +73,6 @@ class PesananController extends Controller
             ->orderBy('pesanan.created_at', 'desc')
             ->get();
 
-        // Ambil semua log sekaligus (efisien, tidak N+1)
         $pesananIds = $pesanan->pluck('id')->toArray();
 
         $logKalkulasi = DB::table('log_kalkulasi_pesanan')
@@ -107,13 +105,11 @@ class PesananController extends Controller
             ->get()
             ->groupBy('pesanan_id');
 
-        // Inject log ke tiap pesanan
         $pesanan->each(function ($p) use ($logKalkulasi, $logTimbang) {
             $p->log_kalkulasi        = $logKalkulasi->get($p->id, collect());
             $p->log_timbang_muat_raw = $logTimbang->get($p->id, collect());
         });
 
-        // Hitung semua statistik dalam 1 query
         $sc = DB::table('pesanan')
             ->selectRaw("
                 COUNT(*) as total,
@@ -148,7 +144,7 @@ class PesananController extends Controller
     }
 
     /**
-     * VERIFIKASI DP (NOTA 1): Otomatis mengunci nominal DP 20% & harga kontrak awal tanpa input manual admin
+     * VERIFIKASI DP (NOTA 1)
      */
     public function konfirmasiDP(Request $request, int $id): RedirectResponse
     {
@@ -174,8 +170,7 @@ class PesananController extends Controller
     }
 
     /**
-     * TAHAP 1 (OPERATOR / ADMIN): Input muatan fisik riil dari lapangan ke dalam sistem
-     * + Catat riwayat perubahan konversi ke log_kalkulasi_pesanan
+     * TAHAP 1 (OPERATOR / ADMIN): Input muatan fisik riil dari lapangan
      */
     public function inputMuat(Request $request, int $id): RedirectResponse
     {
@@ -187,7 +182,6 @@ class PesananController extends Controller
 
         return DB::transaction(function () use ($request, $id) {
 
-            // Ambil konversi lama sebelum diupdate
             $detailLama = DB::table('detail_pesanan')
                 ->where('id', $request->detail_id)
                 ->select('konversi_per_kantong')
@@ -196,14 +190,12 @@ class PesananController extends Controller
             $konversiLama = $detailLama?->konversi_per_kantong ?? null;
             $konversiBaru = (int) $request->konversi_per_kantong;
 
-            // 1. Simpan angka fisik dari lapangan
             DB::table('detail_pesanan')->where('id', $request->detail_id)->update([
                 'total_kantong_riil_muat' => $request->total_kantong_riil_muat,
                 'konversi_per_kantong'    => $konversiBaru,
                 'updated_at'              => now()
             ]);
 
-            // 2. Catat ke log_kalkulasi_pesanan (tabel log terpusat)
             DB::table('log_kalkulasi_pesanan')->insert([
                 'pesanan_id'   => $id,
                 'user_id'      => Auth::id(),
@@ -217,7 +209,6 @@ class PesananController extends Controller
                 'updated_at'   => now()
             ]);
 
-            // 3. Oper ke Admin untuk dikalkulasi
             DB::table('pesanan')->where('id', $id)->update([
                 'status'     => 'menunggu_kalkulasi',
                 'updated_at' => now()
@@ -228,7 +219,7 @@ class PesananController extends Controller
     }
 
     /**
-     * TAHAP 2 (ADMIN): Proses hitung riil muat kantong, diskon, dan DOC (Potong Stok Hulu)
+     * TAHAP 2 (ADMIN): Kalkulasi tagihan final
      */
     public function kalkulasiFinal(Request $request, int $id): RedirectResponse
     {
@@ -250,7 +241,6 @@ class PesananController extends Controller
             }
 
             $docAktif = (int) Carbon::parse($order->waktu_tabur)->startOfDay()->diffInDays(now()->startOfDay());
-
             $hargaFinalPerEkor = $order->harga_per_ekor_kontrak;
 
             if (!$order->is_harga_dikunci) {
@@ -283,7 +273,6 @@ class PesananController extends Controller
                 ->where('id', $order->siklus_id_riil)
                 ->decrement('stok_tersedia', $volumePengali);
 
-            // Catat ke log kalkulasi
             DB::table('log_kalkulasi_pesanan')->insert([
                 'pesanan_id'   => $id,
                 'user_id'      => Auth::id(),
@@ -306,7 +295,7 @@ class PesananController extends Controller
     }
 
     /**
-     * TAHAP 3 (ADMIN): Eksekusi mutakhir nota panen dan verifikasi pelunasan (NOTA 2)
+     * TAHAP 3 (ADMIN): Verifikasi pelunasan
      */
     public function validasiPelunasan(Request $request, int $id): RedirectResponse
     {
@@ -320,47 +309,88 @@ class PesananController extends Controller
     }
 
     /**
-     * FITUR INVOICE GENERATOR: Cetak Nota Terpadu (dp / pelunasan)
+     * ✅ FIX: FITUR INVOICE GENERATOR — ambil SEMUA item detail pesanan, bukan first()
      */
     public function cetakInvoice(Request $request, int $id): View
     {
         $type = $request->query('type', 'dp');
 
+        // Data header pesanan saja (tanpa join detail)
         $pesanan = DB::table('pesanan')
             ->join('users', 'pesanan.user_id', '=', 'users.id')
-            ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
-            ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
-            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
-            ->leftJoin('jenis_benur', 'siklus_kolam.jenis_id', '=', 'jenis_benur.id')
-            ->leftJoin('ukuran_benur', 'siklus_kolam.ukuran_id', '=', 'ukuran_benur.id')
             ->select(
                 'pesanan.*',
                 'users.name as nama_customer',
                 'users.email as email_customer',
-                'detail_pesanan.jumlah_sak_dipesan',
-                'detail_pesanan.kantong_eceran_dipesan',
-                'detail_pesanan.total_kantong_hitung',
-                'detail_pesanan.total_kantong_riil_muat',
-                'detail_pesanan.konversi_per_kantong',
-                'detail_pesanan.harga_per_ekor_kontrak',
-                'detail_pesanan.harga_per_ekor_aktual',
-                'detail_pesanan.subtotal_kotor',
-                'detail_pesanan.diskon_pembulatan_manual',
-                'master_kolam.nama_kolam',
-                'jenis_benur.nama as nama_jenis',
-                'ukuran_benur.ukuran as label_ukuran'
             )
             ->where('pesanan.id', $id)
             ->first();
 
         if (!$pesanan) {
-            abort(404, 'Data transaksi draf tidak ditemukan.');
+            abort(404, 'Data transaksi tidak ditemukan.');
         }
 
-        $pesanan->total_ekor_booking = $pesanan->total_kantong_hitung * $pesanan->konversi_per_kantong;
-        $pesanan->total_ekor_aktual  = $pesanan->total_kantong_riil_muat * $pesanan->konversi_per_kantong;
+        // ✅ Ambil SEMUA item (semua kolam) dalam pesanan ini
+        $items = DB::table('detail_pesanan')
+            ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
+            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
+            ->leftJoin('jenis_benur', 'siklus_kolam.jenis_id', '=', 'jenis_benur.id')
+            ->leftJoin('ukuran_benur', 'siklus_kolam.ukuran_id', '=', 'ukuran_benur.id')
+            ->leftJoin('grade_benur', 'siklus_kolam.grade_id', '=', 'grade_benur.id')
+            ->where('detail_pesanan.pesanan_id', $id)
+            ->select(
+                'detail_pesanan.*',
+                'master_kolam.nama_kolam',
+                'jenis_benur.nama as nama_jenis',
+                'ukuran_benur.ukuran as label_ukuran',
+                'grade_benur.nama_grade as nama_grade',
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+            )
+            ->get();
 
-        return view('admin.pesanan.cetak_nota', compact('pesanan', 'type'));
+        if ($items->isEmpty()) {
+            abort(404, 'Detail pesanan tidak ditemukan.');
+        }
+
+        // Hitung harga aktual dari master_harga per item, inject ke tiap item
+        foreach ($items as $item) {
+            $hargaMaster = DB::table('master_harga')
+                ->where('jenis_id', $item->jenis_id)
+                ->where('ukuran_id', $item->ukuran_id)
+                ->where('grade_id', $item->grade_id)
+                ->value('harga_jual');
+
+            $item->harga_real = $hargaMaster
+                ?? ($type === 'dp' ? $item->harga_per_ekor_kontrak : $item->harga_per_ekor_aktual)
+                ?? 0;
+
+            $item->total_ekor_booking = $item->total_kantong_hitung * $item->konversi_per_kantong;
+            $item->total_ekor_aktual  = ($item->total_kantong_riil_muat ?? 0) * $item->konversi_per_kantong;
+
+            $item->subtotal_item = $type === 'dp'
+                ? $item->total_ekor_booking * $item->harga_real
+                : $item->total_ekor_aktual * $item->harga_real;
+        }
+
+        // Agregat untuk ringkasan finansial
+        $subtotalKotor   = $items->sum('subtotal_item');
+        $diskonTotal     = $items->sum('diskon_pembulatan_manual') ?? 0;
+        $dpDibayar       = $pesanan->nominal_dp_dibayar ?? 0;
+        $totalTagihan    = $pesanan->total_pembayaran_final ?? ($subtotalKotor - $diskonTotal);
+        $sisaTagihan     = $type === 'dp'
+            ? $subtotalKotor - $dpDibayar
+            : $totalTagihan - $dpDibayar;
+
+        // Nama kolam pertama untuk "Asal Pengambilan" di header nota
+        $namaKolamPertama = $items->first()->nama_kolam ?? '-';
+
+        return view('admin.pesanan.cetak_nota', compact(
+            'pesanan', 'items', 'type',
+            'subtotalKotor', 'diskonTotal', 'dpDibayar', 'totalTagihan', 'sisaTagihan',
+            'namaKolamPertama'
+        ));
     }
 
     /**
