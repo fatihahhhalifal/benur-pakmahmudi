@@ -58,12 +58,12 @@
         {{-- TAB FILTER --}}
         @php
             $tabs = [
-                ['id'=>'semua',              'label'=>'Semua',                  'count'=>$countSemua,   'active'=>'bg-blue-600',    'badge'=>'bg-blue-700',    'icon'=>'fa-list'],
-                ['id'=>'pending',            'label'=>'Verifikasi DP',          'count'=>$countPending, 'active'=>'bg-amber-500',   'badge'=>'bg-amber-500',   'icon'=>'fa-clock-rotate-left'],
-                ['id'=>'proses',             'label'=>'Diproses / Muat',        'count'=>$countProses,  'active'=>'bg-blue-600',    'badge'=>'bg-blue-500',    'icon'=>'fa-truck-ramp-box'],
-                ['id'=>'menunggu_pelunasan', 'label'=>'Menunggu Pelunasan',     'count'=>$countTagihan, 'active'=>'bg-rose-500',    'badge'=>'bg-rose-500',    'icon'=>'fa-file-invoice-dollar'],
-                ['id'=>'selesai',            'label'=>'Selesai',                'count'=>$countSelesai, 'active'=>'bg-emerald-600', 'badge'=>'bg-emerald-500', 'icon'=>'fa-circle-check'],
-                ['id'=>'batal',              'label'=>'Ditolak / Dibatalkan',   'count'=>$countBatal,   'active'=>'bg-slate-600',   'badge'=>'bg-slate-500',   'icon'=>'fa-ban'],
+                ['id'=>'semua',              'label'=>'Semua',                 'count'=>$countSemua,   'active'=>'bg-blue-600',    'badge'=>'bg-blue-700',    'icon'=>'fa-list'],
+                ['id'=>'pending',            'label'=>'Belum Bayar DP',        'count'=>$countPending, 'active'=>'bg-amber-500',   'badge'=>'bg-amber-500',   'icon'=>'fa-clock-rotate-left'],
+                ['id'=>'proses',             'label'=>'Diproses / Muat',       'count'=>$countProses,  'active'=>'bg-blue-600',    'badge'=>'bg-blue-500',    'icon'=>'fa-truck-ramp-box'],
+                ['id'=>'menunggu_pelunasan', 'label'=>'Menunggu Pelunasan',    'count'=>$countTagihan, 'active'=>'bg-rose-500',    'badge'=>'bg-rose-500',    'icon'=>'fa-file-invoice-dollar'],
+                ['id'=>'selesai',            'label'=>'Selesai',               'count'=>$countSelesai, 'active'=>'bg-emerald-600', 'badge'=>'bg-emerald-500', 'icon'=>'fa-circle-check'],
+                ['id'=>'batal',              'label'=>'Ditolak / Dibatalkan',  'count'=>$countBatal,   'active'=>'bg-slate-600',   'badge'=>'bg-slate-500',   'icon'=>'fa-ban'],
             ];
         @endphp
         <div class="flex gap-2 mb-5 overflow-x-auto pt-3 pb-2 hide-scrollbar">
@@ -130,6 +130,14 @@
                     $status        = $fi->status;
                     $isRiil        = in_array($status, ['menunggu_pelunasan','selesai','menunggu_kalkulasi']);
 
+                    // ✅ FIX DOC: ambil waktu_tabur dari siklus_kolam, hitung integer diffInDays
+                    $siklusDoc = \Illuminate\Support\Facades\DB::table('siklus_kolam')
+                        ->where('id', $fi->siklus_id ?? 0)
+                        ->value('waktu_tabur');
+                    $docHari = $siklusDoc
+                        ? (int)\Carbon\Carbon::parse($siklusDoc)->startOfDay()->diffInDays(now()->startOfDay())
+                        : '-';
+
                     $foto = \Illuminate\Support\Facades\DB::table('riwayat_sampling')
                         ->where('siklus_id', $fi->siklus_id ?? 0)
                         ->whereNotNull('path_foto')
@@ -156,13 +164,14 @@
                     $subtotalRiil  = $ekorRiil * $harga;
                     $sisaBayar     = $totalTagihan > 0 ? $totalTagihan - $dpDibayar : 0;
 
+                    // ✅ REVISI: label status disesuaikan dengan alur Midtrans
                     $badgeMap = [
-                        'pending'            => ['amber',   'fa-clock-rotate-left',    'Menunggu Verifikasi DP',   false],
-                        'proses'             => ['blue',    'fa-truck-ramp-box',        'DP Diverifikasi / Siap Muat', false],
-                        'menunggu_kalkulasi' => ['purple',  'fa-calculator',            'Sedang Dihitung Admin',    false],
-                        'menunggu_pelunasan' => ['rose',    'fa-file-invoice-dollar',   'Menunggu Pelunasan',       true],
-                        'selesai'            => ['emerald', 'fa-check-double',          'Selesai',                  false],
-                        'batal'              => ['slate',   'fa-ban',                   'Ditolak / Dibatalkan',     false],
+                        'pending'            => ['amber',   'fa-clock-rotate-left',    'Menunggu Pembayaran DP',  false],
+                        'proses'             => ['blue',    'fa-truck-ramp-box',        'DP Dibayar / Siap Muat',  false],
+                        'menunggu_kalkulasi' => ['purple',  'fa-calculator',            'Sedang Dihitung Admin',   false],
+                        'menunggu_pelunasan' => ['rose',    'fa-file-invoice-dollar',   'Menunggu Pelunasan',      true],
+                        'selesai'            => ['emerald', 'fa-check-double',          'Selesai',                 false],
+                        'batal'              => ['slate',   'fa-ban',                   'Ditolak / Dibatalkan',    false],
                     ];
                     [$bc, $bico, $blabel, $bpulse] = $badgeMap[$status] ?? $badgeMap['batal'];
 
@@ -192,28 +201,22 @@
                         </div>
 
                         {{-- Status badge --}}
-                        @if($status !== 'batal')
-                            <span class="inline-flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1.5 rounded-xl border shrink-0
-                                bg-{{ $bc }}-50 text-{{ $bc }}-700 border-{{ $bc }}-200 {{ $bpulse ? 'animate-pulse' : '' }} shadow-sm">
-                                <i class="fa-solid {{ $bico }} text-[8px]"></i>
-                                {{ $blabel }}
-                            </span>
-                        @else
-                            <span class="inline-flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1.5 rounded-xl border shrink-0
-                                bg-slate-50 text-slate-500 border-slate-200 shadow-sm">
-                                <i class="fa-solid fa-ban text-[8px]"></i>
-                                Ditolak / Dibatalkan
-                            </span>
-                        @endif
+                        <span class="inline-flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1.5 rounded-xl border shrink-0 shadow-sm
+                            {{ $status !== 'batal'
+                                ? 'bg-'.$bc.'-50 text-'.$bc.'-700 border-'.$bc.'-200 '.($bpulse ? 'animate-pulse' : '')
+                                : 'bg-slate-50 text-slate-500 border-slate-200' }}">
+                            <i class="fa-solid {{ $bico }} text-[8px]"></i>
+                            {{ $blabel }}
+                        </span>
                     </div>
 
-                    {{-- Mini progress stepper (hanya untuk non-batal) --}}
+                    {{-- ✅ Mini stepper — step 1 label diganti "Bayar DP" --}}
                     @if($status !== 'batal' && $stepIndex > 0)
                     <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                         <div class="flex items-center gap-1">
                             @php
                                 $miniSteps = [
-                                    ['Verif. DP', 1],
+                                    ['Bayar DP',  1],  // ✅ sebelumnya "Verif. DP"
                                     ['Siap Muat', 2],
                                     ['Dihitung',  3],
                                     ['Pelunasan', 4],
@@ -247,10 +250,10 @@
                     </div>
                     @endif
 
-                    {{-- Layout Simple: Foto & Ringkasan Informasi --}}
+                    {{-- Layout: Foto & Ringkasan --}}
                     <div class="p-4 flex flex-col sm:flex-row gap-4 bg-white">
-                        
-                        {{-- FOTO ESTETIK (Berjarak & Melengkung) --}}
+
+                        {{-- FOTO --}}
                         <div class="w-full sm:w-[130px] h-[160px] sm:h-[120px] bg-slate-100 rounded-xl shrink-0 relative overflow-hidden border border-slate-200 shadow-sm">
                             @if($foto)
                                 <img src="{{ asset('storage/'.$foto) }}" class="w-full h-full object-cover">
@@ -259,8 +262,9 @@
                                     <i class="fa-solid fa-shrimp text-4xl text-blue-200"></i>
                                 </div>
                             @endif
+                            {{-- ✅ FIX DOC badge: pakai $docHari yang sudah dihitung integer --}}
                             <span class="absolute bottom-2 left-2 bg-blue-600/80 text-white text-[8px] font-black px-2 py-1 rounded-md backdrop-blur-sm shadow-sm">
-                                DOC {{ \Carbon\Carbon::parse($fi->waktu_tabur ?? now())->diffInDays(now()) }}
+                                DOC {{ $docHari }}
                             </span>
                         </div>
 
@@ -269,7 +273,7 @@
                             <p class="text-sm font-black text-slate-900 truncate">{{ $fi->nama_kolam }}</p>
                             <p class="text-[11px] text-slate-400 font-medium truncate mt-0.5 mb-3">Benur {{ $fi->nama_jenis ?? 'Vaname' }}</p>
 
-                            {{-- Highlight Cepat (Volume & Total Tagihan/Estimasi) --}}
+                            {{-- Highlight Volume & Total --}}
                             <div class="flex flex-wrap items-center gap-4 mb-4">
                                 @if($isRiil && $kantongRiil > 0)
                                     <div>
@@ -282,7 +286,7 @@
                                         <p class="text-[13px] font-black text-blue-600">{{ number_format($ekorDraf,0,',','.') }} <span class="text-[9px] text-blue-400 font-medium">Ekor</span></p>
                                     </div>
                                 @endif
-                                
+
                                 <div class="w-px h-6 bg-slate-200 hidden sm:block"></div>
 
                                 <div>
@@ -291,12 +295,18 @@
                                 </div>
                             </div>
 
-                            {{-- Action Primary & Toggle Dropdown --}}
+                            {{-- Aksi --}}
                             <div class="flex flex-wrap items-center gap-2 mt-auto">
                                 @if($status == 'menunggu_pelunasan')
                                     <a href="{{ route('customer.pesanan.detail',$pesananId) }}"
                                        class="flex items-center justify-center gap-1.5 text-[10px] font-black bg-rose-500 text-white px-4 py-2.5 rounded-xl hover:bg-rose-600 transition-colors shadow-sm shadow-rose-500/20 animate-pulse">
                                         <i class="fa-solid fa-money-bill-wave text-[9px]"></i> Bayar Sekarang
+                                    </a>
+                                @elseif($status == 'pending')
+                                    {{-- ✅ Tombol bayar DP langsung dari list --}}
+                                    <a href="{{ route('customer.pesanan.detail',$pesananId) }}"
+                                       class="flex items-center justify-center gap-1.5 text-[10px] font-black bg-amber-500 text-white px-4 py-2.5 rounded-xl hover:bg-amber-600 transition-colors shadow-sm shadow-amber-500/20">
+                                        <i class="fa-solid fa-bolt text-[9px]"></i> Bayar DP
                                     </a>
                                 @else
                                     <a href="{{ route('customer.pesanan.detail',$pesananId) }}"
@@ -305,7 +315,6 @@
                                     </a>
                                 @endif
 
-                                {{-- Tombol Toggle Rincian --}}
                                 <button @click="expanded = !expanded" type="button"
                                     class="ml-auto flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors shadow-sm">
                                     <span x-text="expanded ? 'Tutup Rincian' : 'Lihat Rincian'"></span>
@@ -315,7 +324,7 @@
                         </div>
                     </div>
 
-                    {{-- DROPDOWN: RINCIAN EKSTRA (Tersembunyi secara default) --}}
+                    {{-- DROPDOWN RINCIAN --}}
                     <div x-show="expanded"
                          x-transition:enter="transition ease-out duration-200"
                          x-transition:enter-start="opacity-0 -translate-y-2"
@@ -324,11 +333,11 @@
                          x-transition:leave-start="opacity-100 translate-y-0"
                          x-transition:leave-end="opacity-0 -translate-y-2"
                          class="border-t border-slate-100 bg-slate-50/50 p-4" style="display: none;">
-                        
+
                         <div class="flex flex-col sm:flex-row gap-5">
+
                             {{-- Kolom Kiri: Detail Volume --}}
                             <div class="flex-1 space-y-3 min-w-0">
-                                {{-- Draf --}}
                                 <div class="bg-white rounded-xl p-3 border border-slate-100 shadow-sm">
                                     <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Draf Pesanan Awal</p>
                                     <div class="flex flex-wrap items-center gap-1 mb-1">
@@ -346,7 +355,6 @@
                                     <p class="text-[9px] text-slate-400">= <span class="font-black text-blue-700">{{ number_format($ekorDraf,0,',','.') }} Ekor</span></p>
                                 </div>
 
-                                {{-- Fisik Riil --}}
                                 @if($isRiil && $kantongRiil > 0)
                                 <div class="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 shadow-sm">
                                     <p class="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1.5">Fisik Riil Muat</p>
@@ -432,7 +440,7 @@
                                     </div>
                                 </div>
 
-                                {{-- Aksi Tambahan: Nota Download --}}
+                                {{-- Aksi Nota --}}
                                 <div class="flex items-center gap-2 mt-3">
                                     @if(in_array($status,['proses','menunggu_kalkulasi','menunggu_pelunasan','selesai']) && $dpDibayar > 0)
                                         <a href="{{ route('customer.pesanan.invoice',['id'=>$pesananId,'type'=>'dp']) }}" target="_blank"
@@ -440,7 +448,6 @@
                                             <i class="fa-solid fa-download"></i> Unduh Nota DP
                                         </a>
                                     @endif
-
                                     @if($status == 'selesai')
                                         <a href="{{ route('customer.pesanan.invoice',['id'=>$pesananId,'type'=>'pelunasan']) }}" target="_blank"
                                            class="flex items-center justify-center gap-1.5 text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2 rounded-xl hover:bg-emerald-100 transition-colors shadow-sm flex-1">
