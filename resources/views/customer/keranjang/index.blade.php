@@ -137,8 +137,7 @@
 
                                     {{-- Info --}}
                                     <div class="flex-1 min-w-0 cursor-pointer" @click="item.selected = !item.selected; checkSelection()">
-                                        <h3 class="text-sm font-black text-slate-900 leading-tight truncate" x-text="item.nama_kolam"></h3>
-                                        <p class="text-[11px] font-bold text-slate-500 truncate mt-0.5" x-text="'Benur ' + item.nama_jenis"></p>
+                                        <h3 class="text-sm font-black text-slate-900 leading-tight truncate" x-text="'Benur ' + item.nama_jenis"></h3>
                                         <div class="flex gap-1.5 flex-wrap mt-1.5">
                                             <span class="bg-amber-50 text-amber-600 text-[9px] font-black px-2 py-0.5 rounded-md border border-amber-100 flex items-center gap-1">
                                                 <i class="fa-solid fa-star text-amber-400 text-[7px]"></i> <span x-text="item.nama_grade"></span>
@@ -254,7 +253,7 @@
                                 <template x-for="item in selectedItems" :key="'d'+item.id">
                                     <div class="pb-2 border-b border-slate-50 last:border-0 last:pb-0">
                                         <div class="flex justify-between items-center gap-2 mb-0.5">
-                                            <span class="text-[11px] text-slate-700 font-bold truncate pr-2" x-text="item.nama_kolam"></span>
+                                            <span class="text-[11px] text-slate-700 font-bold truncate pr-2" x-text="'Benur ' + item.nama_jenis"></span>
                                             <span class="text-[11px] text-blue-600 font-black shrink-0" x-text="formatRupiah((item.sak*45+item.ecer)*1700) + ' Ekor'"></span>
                                         </div>
                                         <p class="text-[9px] text-slate-400 font-medium"

@@ -255,8 +255,7 @@
                                     <span class="absolute top-1 left-1 bg-blue-600/90 text-white text-[8px] font-black px-1.5 py-0.5 rounded">DOC {{ $doc }}</span>
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <h3 class="text-sm font-black text-slate-900 truncate">{{ $item->nama_kolam ?? 'Kolam Standar' }}</h3>
-                                    <p class="text-[10px] text-slate-500 font-medium mt-0.5 truncate">Benur {{ $item->nama_jenis ?? 'Vannamei' }}</p>
+                                    <h3 class="text-sm font-black text-slate-900 truncate">Benur {{ $item->nama_jenis ?? 'Vannamei' }}</h3>
                                     <div class="flex flex-wrap gap-1.5 mt-2">
                                         <span class="text-[9px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 flex items-center gap-1">
                                             <i class="fa-solid fa-star text-amber-400 text-[8px]"></i> Grade {{ $siklusInfo->nama_grade ?? 'A' }}

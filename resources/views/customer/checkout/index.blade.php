@@ -173,8 +173,8 @@
                         @endif
                     </div>
                     <div class="flex-1 min-w-0">
-                        <p class="text-xs font-black text-slate-900 truncate">{{ $item->nama_kolam }}</p>
-                        <p class="text-[9px] text-slate-400 font-medium mb-1.5">Benur {{ $item->nama_jenis ?? 'Vaname' }} · PL{{ $item->label_ukuran ?? '10' }}</p>
+                        <p class="text-xs font-black text-slate-900 truncate">Benur {{ $item->nama_jenis ?? 'Vaname' }}</p>
+                        <p class="text-[9px] text-slate-400 font-medium mb-1.5">PL{{ $item->label_ukuran ?? '10' }}</p>
                         <div class="flex flex-wrap items-center gap-1">
                             <span class="text-[8px] font-black text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100">
                                 {{ $item->jumlah_sak }} Sak

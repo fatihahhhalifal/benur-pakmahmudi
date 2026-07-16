@@ -27,7 +27,6 @@
                 const q = this.searchQuery.toLowerCase();
                 orders = orders.filter(o =>
                     (o.nomor_invoice||'').toLowerCase().includes(q) ||
-                    (o.nama_kolam||'').toLowerCase().includes(q) ||
                     (o.nama_jenis||'').toLowerCase().includes(q)
                 );
             }
@@ -85,7 +84,7 @@
                 <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
                     <i class="fa-solid fa-magnifying-glass text-sm"></i>
                 </span>
-                <input type="text" x-model="searchQuery" placeholder="Cari nomor invoice, nama kolam, atau jenis benur..."
+                <input type="text" x-model="searchQuery" placeholder="Cari nomor invoice atau jenis benur..."
                     class="w-full bg-white border border-slate-200 text-slate-800 rounded-2xl pl-11 pr-4 py-2.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 shadow-sm">
             </div>
             <select x-model="sortBy"
@@ -270,8 +269,7 @@
 
                         {{-- INFO RINGKAS --}}
                         <div class="flex-1 flex flex-col min-w-0">
-                            <p class="text-sm font-black text-slate-900 truncate">{{ $fi->nama_kolam }}</p>
-                            <p class="text-[11px] text-slate-400 font-medium truncate mt-0.5 mb-3">Benur {{ $fi->nama_jenis ?? 'Vaname' }}</p>
+                            <p class="text-sm font-black text-slate-900 truncate mb-3">Benur {{ $fi->nama_jenis ?? 'Vaname' }}</p>
 
                             {{-- Highlight Volume & Total --}}
                             <div class="flex flex-wrap items-center gap-4 mb-4">

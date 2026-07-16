@@ -147,16 +147,15 @@
 
                         {{-- ── INFO PRODUK ── --}}
                         <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                            <div class="flex items-start justify-between gap-2 mb-1">
+                            <div class="flex items-start justify-between gap-2 mb-3">
                                 <h1 class="text-[17px] font-black text-slate-900 tracking-tight leading-tight">
-                                    {{ $produk->nama_kolam }}
+                                    Benur {{ $produk->nama_jenis ?? 'Vaname' }}
                                 </h1>
                                 <span class="shrink-0 flex items-center gap-1 bg-emerald-50 text-emerald-600
                                              text-[8px] font-black px-2 py-1 rounded-lg">
                                     <i class="fa-solid fa-circle text-[5px] animate-pulse"></i> Ready
                                 </span>
                             </div>
-                            <p class="text-[11px] text-slate-500 font-medium mb-3">Benur {{ $produk->nama_jenis }}</p>
 
                             <div class="flex items-center gap-1.5 mb-4 pb-4 border-b border-slate-100">
                                 <span class="bg-amber-50 text-amber-600 text-[9px] font-black px-2 py-1 rounded-lg flex items-center gap-1">

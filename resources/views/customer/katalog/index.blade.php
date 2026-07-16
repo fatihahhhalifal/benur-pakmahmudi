@@ -130,7 +130,7 @@
                         <input
                             type="text"
                             x-model="searchQuery"
-                            placeholder="Cari kolam, jenis, ukuran, atau grade..."
+                            placeholder="Cari jenis, ukuran, atau grade..."
                             class="w-full bg-white border border-slate-200 rounded-2xl pl-9 pr-4 py-2.5
                                    text-[12px] font-medium text-slate-700 placeholder:text-slate-400
                                    focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
@@ -155,8 +155,7 @@
                     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col
                                 transition-transform active:scale-[0.98]"
                          x-show="searchQuery === ''
-                               || '{{ strtolower($prod->nama_jenis) }}'.includes(searchQuery.toLowerCase())
-                               || '{{ strtolower($prod->nama_kolam) }}'.includes(searchQuery.toLowerCase())">
+                               || '{{ strtolower($prod->nama_jenis) }}'.includes(searchQuery.toLowerCase())"
 
                         {{-- Foto --}}
                         <div class="relative w-full aspect-[4/3] bg-slate-100 overflow-hidden">
@@ -205,8 +204,7 @@
 
                             {{-- Nama: hitam pekat | Jenis: abu-abu --}}
                             <div>
-                                <p class="text-[13px] font-black text-slate-900 leading-tight truncate">{{ $prod->nama_kolam }}</p>
-                                <p class="text-[10px] text-slate-400 font-medium truncate mt-0.5">{{ $prod->nama_jenis ?? 'Vaname' }}</p>
+                                <p class="text-[13px] font-black text-slate-900 leading-tight truncate">Benur {{ $prod->nama_jenis ?? 'Vaname' }}</p>
                             </div>
 
                             {{-- Grade: amber | PL: biru --}}
