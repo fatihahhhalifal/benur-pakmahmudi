@@ -38,7 +38,32 @@ class BiayaOperasionalController extends Controller
                 'bop_kolam.nominal_biaya',
                 DB::raw("'KELUAR' as jenis_arus"),
                 'bop_kolam.siklus_id',
-                DB::raw("'disetujui' as status_bop")
+                DB::raw("'disetujui' as status_bop"),
+                DB::raw('0 as is_locked')
+            );
+
+        // Modal pembelian benih adalah biaya awal siklus yang tersimpan di
+        // siklus_kolam, bukan baris fisik di bop_kolam. Masukkan sebagai jurnal
+        // virtual agar terbaca pada BOP tanpa menggandakan transaksi di database.
+        $modal_benih_aktif = DB::table('siklus_kolam')
+            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
+            ->where('siklus_kolam.status', 'aktif')
+            ->where('siklus_kolam.modal_awal_rupiah', '>', 0)
+            ->select(
+                DB::raw("CONCAT('modal-benih-', siklus_kolam.id) as id"),
+                'siklus_kolam.waktu_tabur as tanggal',
+                DB::raw('NULL as waktu_pencatatan'),
+                'master_kolam.nama_kolam',
+                'siklus_kolam.waktu_tabur',
+                DB::raw('NULL as waktu_kuras'),
+                DB::raw("'PENGELUARAN' as kategori_akun"),
+                DB::raw("'Modal Benih' as kategori_bop"),
+                DB::raw("'Pembelian benih awal siklus' as deskripsi"),
+                'siklus_kolam.modal_awal_rupiah as nominal_biaya',
+                DB::raw("'KELUAR' as jenis_arus"),
+                'siklus_kolam.id as siklus_id',
+                DB::raw("'disetujui' as status_bop"),
+                DB::raw('1 as is_locked')
             );
 
         // B. Arus Masuk Sah (Omzet Preorder)
@@ -61,10 +86,13 @@ class BiayaOperasionalController extends Controller
                 DB::raw("CASE WHEN pesanan.status = 'selesai' THEN pesanan.total_pembayaran_final ELSE pesanan.nominal_dp_dibayar END as nominal_biaya"),
                 DB::raw("'MASUK' as jenis_arus"),
                 'detail_pesanan.siklus_id',
-                DB::raw("'disetujui' as status_bop")
+                DB::raw("'disetujui' as status_bop"),
+                DB::raw('1 as is_locked')
             );
 
-        $bop_aktif = $pengeluaran_aktif->unionAll($pendapatan_aktif)
+        $bop_aktif = $pengeluaran_aktif
+            ->unionAll($modal_benih_aktif)
+            ->unionAll($pendapatan_aktif)
             ->orderBy('tanggal', 'desc')
             ->get();
 
@@ -110,6 +138,24 @@ class BiayaOperasionalController extends Controller
                 'bop_kolam.siklus_id'
             );
 
+        $modal_benih_arsip = DB::table('siklus_kolam')
+            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
+            ->where('siklus_kolam.status', 'selesai')
+            ->where('siklus_kolam.modal_awal_rupiah', '>', 0)
+            ->select(
+                DB::raw("CONCAT('modal-benih-', siklus_kolam.id) as id"),
+                'siklus_kolam.waktu_tabur as tanggal',
+                'master_kolam.nama_kolam',
+                'siklus_kolam.waktu_tabur',
+                'siklus_kolam.waktu_kuras',
+                DB::raw("'PENGELUARAN' as kategori_akun"),
+                DB::raw("'Modal Benih' as kategori_bop"),
+                DB::raw("'Pembelian benih awal siklus' as deskripsi"),
+                'siklus_kolam.modal_awal_rupiah as nominal_biaya',
+                DB::raw("'KELUAR' as jenis_arus"),
+                'siklus_kolam.id as siklus_id'
+            );
+
         $pendapatan_arsip = DB::table('pesanan')
             ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
             ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
@@ -130,7 +176,9 @@ class BiayaOperasionalController extends Controller
                 'detail_pesanan.siklus_id'
             );
 
-        $bop_arsip = $pengeluaran_arsip->unionAll($pendapatan_arsip)
+        $bop_arsip = $pengeluaran_arsip
+            ->unionAll($modal_benih_arsip)
+            ->unionAll($pendapatan_arsip)
             ->orderBy('waktu_kuras', 'desc')
             ->get();
 

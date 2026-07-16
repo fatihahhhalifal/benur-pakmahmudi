@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
 class CheckoutController extends Controller
@@ -99,29 +100,80 @@ class CheckoutController extends Controller
             ]);
 
             foreach ($cartItems as $item) {
-                $siklus = DB::table('siklus_kolam')->where('kolam_id', $item->kolam_id)->where('status', 'aktif')->first();
-                
+                // kolam_id di keranjang hanyalah penanda produk internal. Ambil
+                // semua kolam yang menjual SKU serupa agar customer tidak perlu
+                // memilih kolam dan pesanan bisa dialokasikan otomatis.
+                $produkAcuan = DB::table('siklus_kolam')
+                    ->where('kolam_id', $item->kolam_id)
+                    ->where('status', 'aktif')
+                    ->first();
+
+                if (!$produkAcuan) {
+                    throw ValidationException::withMessages([
+                        'keranjang' => 'Salah satu produk di keranjang sudah tidak tersedia.',
+                    ]);
+                }
+
                 $hargaAcuan = DB::table('master_harga')
-                    ->where('jenis_id', $siklus->jenis_id)
-                    ->where('ukuran_id', $siklus->ukuran_id)
-                    ->where('grade_id', $siklus->grade_id)
+                    ->where('jenis_id', $produkAcuan->jenis_id)
+                    ->where('ukuran_id', $produkAcuan->ukuran_id)
+                    ->where('grade_id', $produkAcuan->grade_id)
                     ->value('harga_jual') ?? 0;
 
                 $totalKantongHitung = ($item->jumlah_sak * 45) + $item->kantong_eceran;
+                $sisaKantong = $totalKantongHitung;
 
-                DB::table('detail_pesanan')->insert([
-                    'pesanan_id' => $pesananId,
-                    'siklus_id' => $siklus->id,
-                    'jumlah_sak_dipesan' => $item->jumlah_sak,
-                    'kantong_eceran_dipesan' => $item->kantong_eceran,
-                    'total_kantong_hitung' => $totalKantongHitung,
-                    'konversi_per_kantong' => 1700, 
-                    'harga_per_ekor_kontrak' => $hargaAcuan,
-                    'harga_per_ekor_aktual' => $hargaAcuan, 
-                    'subtotal_kotor' => ($totalKantongHitung * 1700) * $hargaAcuan,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
+                $siklusTersedia = DB::table('siklus_kolam')
+                    ->where('status', 'aktif')
+                    ->where('stok_tersedia', '>', 0)
+                    ->where('jenis_id', $produkAcuan->jenis_id)
+                    ->where('ukuran_id', $produkAcuan->ukuran_id)
+                    ->where('grade_id', $produkAcuan->grade_id)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                $bookingPerSiklus = DB::table('detail_pesanan')
+                    ->join('pesanan', 'detail_pesanan.pesanan_id', '=', 'pesanan.id')
+                    ->whereIn('detail_pesanan.siklus_id', $siklusTersedia->pluck('id'))
+                    ->whereIn('pesanan.status', ['pending', 'proses'])
+                    ->select('detail_pesanan.siklus_id', DB::raw('SUM(detail_pesanan.total_kantong_hitung * COALESCE(detail_pesanan.konversi_per_kantong, 1700)) as total_booking'))
+                    ->groupBy('detail_pesanan.siklus_id')
+                    ->pluck('total_booking', 'detail_pesanan.siklus_id');
+
+                foreach ($siklusTersedia as $siklus) {
+                    $kuotaKantong = intdiv(max(0, $siklus->stok_tersedia - ($bookingPerSiklus[$siklus->id] ?? 0)), 1700);
+                    $kantongDialokasikan = min($sisaKantong, $kuotaKantong);
+
+                    if ($kantongDialokasikan < 1) {
+                        continue;
+                    }
+
+                    DB::table('detail_pesanan')->insert([
+                        'pesanan_id' => $pesananId,
+                        'siklus_id' => $siklus->id,
+                        'jumlah_sak_dipesan' => intdiv($kantongDialokasikan, 45),
+                        'kantong_eceran_dipesan' => $kantongDialokasikan % 45,
+                        'total_kantong_hitung' => $kantongDialokasikan,
+                        'konversi_per_kantong' => 1700,
+                        'harga_per_ekor_kontrak' => $hargaAcuan,
+                        'harga_per_ekor_aktual' => $hargaAcuan,
+                        'subtotal_kotor' => ($kantongDialokasikan * 1700) * $hargaAcuan,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+
+                    $sisaKantong -= $kantongDialokasikan;
+                    if ($sisaKantong === 0) {
+                        break;
+                    }
+                }
+
+                if ($sisaKantong > 0) {
+                    throw ValidationException::withMessages([
+                        'keranjang' => 'Stok untuk salah satu produk tidak mencukupi. Silakan sesuaikan jumlah pesanan.',
+                    ]);
+                }
             }
 
             DB::table('keranjang_sementara')->where('user_id', $userId)->delete();

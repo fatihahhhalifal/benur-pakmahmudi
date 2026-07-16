@@ -36,8 +36,10 @@ class KatalogController extends Controller
 
     private function getKatalogData()
     {
-        return DB::table('siklus_kolam')
-            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
+        // Satu produk katalog dapat berasal dari beberapa kolam. Kolam hanya
+        // dipakai sebagai sumber stok internal; customer berbelanja berdasarkan
+        // jenis, ukuran, grade, dan harga.
+        $katalog = DB::table('siklus_kolam')
             ->leftJoin('jenis_benur', 'siklus_kolam.jenis_id', '=', 'jenis_benur.id')
             ->leftJoin('ukuran_benur', 'siklus_kolam.ukuran_id', '=', 'ukuran_benur.id')
             ->leftJoin('grade_benur', 'siklus_kolam.grade_id', '=', 'grade_benur.id')
@@ -49,29 +51,63 @@ class KatalogController extends Controller
             ->where('siklus_kolam.status', 'aktif')
             ->where('siklus_kolam.stok_tersedia', '>', 0)
             ->select(
-                'siklus_kolam.id as siklus_id',
-                'master_kolam.id as kolam_id',
-                'master_kolam.nama_kolam',
+                DB::raw('MIN(siklus_kolam.id) as siklus_id'),
+                DB::raw('MIN(siklus_kolam.kolam_id) as kolam_id'),
                 'jenis_benur.nama as nama_jenis',
                 'ukuran_benur.ukuran as label_ukuran',
                 'grade_benur.nama_grade as nama_grade',
-                'siklus_kolam.stok_tersedia',
-                'siklus_kolam.waktu_tabur',
-                'master_harga.harga_jual as harga_saat_ini'
+                DB::raw('SUM(siklus_kolam.stok_tersedia) as stok_tersedia'),
+                DB::raw('MIN(siklus_kolam.waktu_tabur) as waktu_tabur'),
+                'master_harga.harga_jual as harga_saat_ini',
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id'
             )
+            ->groupBy(
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                'jenis_benur.nama',
+                'ukuran_benur.ukuran',
+                'grade_benur.nama_grade',
+                'master_harga.harga_jual'
+            )
+            ->get();
+
+        // Kuota pesanan yang masih berjalan harus dikurangi dari stok gabungan,
+        // bukan hanya dari salah satu kolam perwakilan.
+        $booking = DB::table('detail_pesanan')
+            ->join('pesanan', 'detail_pesanan.pesanan_id', '=', 'pesanan.id')
+            ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
+            ->whereIn('pesanan.status', ['pending', 'proses'])
+            ->select(
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                DB::raw('SUM(detail_pesanan.total_kantong_hitung * COALESCE(detail_pesanan.konversi_per_kantong, 1700)) as total_booking')
+            )
+            ->groupBy('siklus_kolam.jenis_id', 'siklus_kolam.ukuran_id', 'siklus_kolam.grade_id')
             ->get()
-            ->map(function ($item) {
+            ->keyBy(fn ($item) => "{$item->jenis_id}:{$item->ukuran_id}:{$item->grade_id}");
+
+        return $katalog
+            ->map(function ($item) use ($booking) {
+                $key = "{$item->jenis_id}:{$item->ukuran_id}:{$item->grade_id}";
+                $item->stok_tersedia = max(0, $item->stok_tersedia - ($booking[$key]->total_booking ?? 0));
                 $item->doc = (int) \Carbon\Carbon::parse($item->waktu_tabur)->startOfDay()->diffInDays(now()->startOfDay());
                 
                 if (!$item->harga_saat_ini) {
                     $item->harga_saat_ini = 0; 
                 }
 
-                $item->path_foto = DB::table('riwayat_sampling')
+                $samplingTerbaru = DB::table('riwayat_sampling')
                     ->where('siklus_id', $item->siklus_id)
                     ->whereNotNull('path_foto')
                     ->orderBy('tanggal_sampling', 'desc')
-                    ->value('path_foto');
+                    ->first(['path_foto', 'tanggal_sampling']);
+
+                $item->foto_terbaru = $samplingTerbaru->path_foto ?? null;
+                $item->tgl_foto = $samplingTerbaru->tanggal_sampling ?? null;
 
                 return $item;
             });
@@ -79,6 +115,18 @@ class KatalogController extends Controller
 
     public function show(int $siklus_id): View
     {
+        // URL detail membawa satu siklus perwakilan, tetapi produk yang dilihat
+        // customer adalah SKU gabungan seluruh kolam aktif dengan jenis, ukuran,
+        // dan grade yang sama.
+        $siklusAcuan = DB::table('siklus_kolam')
+            ->where('id', $siklus_id)
+            ->where('status', 'aktif')
+            ->first();
+
+        if (!$siklusAcuan) {
+            abort(404);
+        }
+
         $produk = DB::table('siklus_kolam')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
             ->leftJoin('jenis_benur', 'siklus_kolam.jenis_id', '=', 'jenis_benur.id')
@@ -89,23 +137,55 @@ class KatalogController extends Controller
                      ->on('siklus_kolam.ukuran_id', '=', 'master_harga.ukuran_id')
                      ->on('siklus_kolam.grade_id', '=', 'master_harga.grade_id');
             })
-            ->where('siklus_kolam.id', $siklus_id)
+            ->where('siklus_kolam.status', 'aktif')
+            ->where('siklus_kolam.jenis_id', $siklusAcuan->jenis_id)
+            ->where('siklus_kolam.ukuran_id', $siklusAcuan->ukuran_id)
+            ->where('siklus_kolam.grade_id', $siklusAcuan->grade_id)
             ->select(
-                'siklus_kolam.*', 
-                'master_kolam.id as kolam_id', 
-                'master_kolam.nama_kolam', 
-                'jenis_benur.nama as nama_jenis', 
-                'jenis_benur.deskripsi as deskripsi_jenis', 
-                'ukuran_benur.ukuran as label_ukuran', 
-                'ukuran_benur.deskripsi as deskripsi_ukuran', 
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                DB::raw('SUM(siklus_kolam.stok_tersedia) as stok_tersedia'),
+                DB::raw('MIN(siklus_kolam.waktu_tabur) as waktu_tabur'),
+                'jenis_benur.nama as nama_jenis',
+                'jenis_benur.deskripsi as deskripsi_jenis',
+                'ukuran_benur.ukuran as label_ukuran',
+                'ukuran_benur.deskripsi as deskripsi_ukuran',
                 'grade_benur.nama_grade as nama_grade',
                 'grade_benur.deskripsi as deskripsi_grade',
                 'master_harga.harga_jual as harga_saat_ini'
+            )
+            ->groupBy(
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                'jenis_benur.nama',
+                'jenis_benur.deskripsi',
+                'ukuran_benur.ukuran',
+                'ukuran_benur.deskripsi',
+                'grade_benur.nama_grade',
+                'grade_benur.deskripsi',
+                'master_harga.harga_jual'
             )
             ->first();
 
         if (!$produk) abort(404);
 
+        // Tetap gunakan satu kolam/siklus perwakilan untuk form dan galeri;
+        // pemecahan pesanan ke kolam-kolam lain dilakukan otomatis saat checkout.
+        $produk->id = $siklusAcuan->id;
+        $produk->kolam_id = $siklusAcuan->kolam_id;
+
+        $totalBooking = DB::table('detail_pesanan')
+            ->join('pesanan', 'detail_pesanan.pesanan_id', '=', 'pesanan.id')
+            ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
+            ->whereIn('pesanan.status', ['pending', 'proses'])
+            ->where('siklus_kolam.jenis_id', $produk->jenis_id)
+            ->where('siklus_kolam.ukuran_id', $produk->ukuran_id)
+            ->where('siklus_kolam.grade_id', $produk->grade_id)
+            ->sum(DB::raw('detail_pesanan.total_kantong_hitung * COALESCE(detail_pesanan.konversi_per_kantong, 1700)'));
+
+        $produk->stok_tersedia = max(0, $produk->stok_tersedia - $totalBooking);
         $produk->doc = (int) Carbon::parse($produk->waktu_tabur)->startOfDay()->diffInDays(now()->startOfDay());
         $produk->harga_saat_ini = $produk->harga_saat_ini ?? 0;
 
@@ -239,16 +319,49 @@ class KatalogController extends Controller
             })
             ->where('detail_pesanan.pesanan_id', $id)
             ->select(
-                'detail_pesanan.*', 
-                'master_kolam.nama_kolam', 
-                'jenis_benur.nama as nama_jenis', 
+                DB::raw('MIN(detail_pesanan.id) as id'),
+                DB::raw('MIN(detail_pesanan.siklus_id) as siklus_id'),
+                DB::raw('SUM(detail_pesanan.jumlah_sak_dipesan) as jumlah_sak_dipesan'),
+                DB::raw('SUM(detail_pesanan.kantong_eceran_dipesan) as kantong_eceran_dipesan'),
+                DB::raw('SUM(detail_pesanan.total_kantong_hitung) as total_kantong_hitung'),
+                DB::raw('SUM(COALESCE(detail_pesanan.total_kantong_riil_muat, 0)) as total_kantong_riil_muat'),
+                DB::raw('MIN(detail_pesanan.konversi_per_kantong) as konversi_per_kantong'),
+                DB::raw('MIN(detail_pesanan.konversi_per_kantong_aktual) as konversi_per_kantong_aktual'),
+                DB::raw('MIN(detail_pesanan.harga_per_ekor_kontrak) as harga_per_ekor_kontrak'),
+                DB::raw('MIN(detail_pesanan.harga_per_ekor_aktual) as harga_per_ekor_aktual'),
+                DB::raw('SUM(COALESCE(detail_pesanan.diskon_pembulatan_manual, 0)) as diskon_pembulatan_manual'),
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                'jenis_benur.nama as nama_jenis',
                 'ukuran_benur.ukuran as label_ukuran',
-                'master_harga.harga_jual as harga_live'
+                DB::raw('MAX(master_harga.harga_jual) as harga_live')
+            )
+            // Satu item customer = satu SKU. Bila alokasi internal tersebar
+            // ke beberapa kolam, volume tetap tampil sebagai satu pesanan utuh.
+            ->groupBy(
+                'siklus_kolam.jenis_id',
+                'siklus_kolam.ukuran_id',
+                'siklus_kolam.grade_id',
+                'jenis_benur.nama',
+                'ukuran_benur.ukuran'
             )
             ->get()
             ->map(function($item) use ($pesanan) {
                 $hargaAktif = $pesanan->is_harga_dikunci ? $item->harga_per_ekor_kontrak : ($item->harga_live ?? $item->harga_per_ekor_kontrak ?? 0);
                 $item->subtotal_kotor = ($item->total_kantong_hitung * $item->konversi_per_kantong) * $hargaAktif;
+
+                // FIX: total_kantong_hitung adalah SUM langsung dari seluruh baris split
+                // per-kolam, jadi nilainya sudah pasti benar (dan ekor/rupiah ikut benar).
+                // Tapi jumlah_sak_dipesan & kantong_eceran_dipesan sebelumnya di-SUM()
+                // secara terpisah per baris (hasil intdiv/modulo masing-masing kolam),
+                // sehingga bisa TIDAK konsisten bila sisa "kantong eceran" antar kolam
+                // totalnya melebihi 45 (butuh carry ke sak, tapi SUM tidak melakukan itu).
+                // Solusi: normalisasi ulang breakdown sak/eceran dari total_kantong_hitung
+                // gabungan, bukan dari SUM masing-masing kolom hasil split.
+                $item->jumlah_sak_dipesan     = intdiv($item->total_kantong_hitung, 45);
+                $item->kantong_eceran_dipesan = $item->total_kantong_hitung % 45;
+
                 return $item;
             });
             

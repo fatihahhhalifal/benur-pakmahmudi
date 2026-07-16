@@ -193,7 +193,7 @@
                                         {{ number_format($ba->nominal_biaya, 0, ',', '.') }}
                                     </td>
                                     <td class="p-3 text-center">
-                                        @if ($ba->jenis_arus === 'KELUAR' && Auth::user()->role === 'admin')
+                                        @if ($ba->jenis_arus === 'KELUAR' && !($ba->is_locked ?? false) && Auth::user()->role === 'admin')
                                             <div class="flex items-center justify-center gap-3">
                                                 <button
                                                     @click="openModalEditBOP = true; editData = { id: '{{ $ba->id }}', siklus_id: '{{ $ba->siklus_id }}', kategori_bop: '{{ $ba->kategori_bop }}', deskripsi: '{{ $ba->deskripsi }}', nominal: '{{ $ba->nominal_biaya }}' }"

@@ -1,28 +1,4 @@
 <x-customer-layout>
-    @php
-        foreach ($katalog as $prod) {
-            $totalBooking = \Illuminate\Support\Facades\DB::table('pesanan')
-                ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
-                ->where('detail_pesanan.siklus_id', $prod->siklus_id)
-                ->whereIn('pesanan.status', ['pending', 'proses'])
-                ->sum(DB::raw('((detail_pesanan.jumlah_sak_dipesan * 45) + detail_pesanan.kantong_eceran_dipesan) * COALESCE(detail_pesanan.konversi_per_kantong, 1700)'));
-            $stokAktual = $prod->stok_tersedia - $totalBooking;
-            $prod->stok_tersedia = $stokAktual < 0 ? 0 : $stokAktual;
-
-            $prod->foto_terbaru = \Illuminate\Support\Facades\DB::table('riwayat_sampling')
-                ->where('siklus_id', $prod->siklus_id)
-                ->whereNotNull('path_foto')
-                ->orderBy('tanggal_sampling', 'desc')
-                ->value('path_foto');
-
-            $prod->tgl_foto = \Illuminate\Support\Facades\DB::table('riwayat_sampling')
-                ->where('siklus_id', $prod->siklus_id)
-                ->whereNotNull('path_foto')
-                ->orderBy('tanggal_sampling', 'desc')
-                ->value('tanggal_sampling');
-        }
-    @endphp
-
     <div x-data="{ searchQuery: '', showFilter: false }" class="font-sans">
 
         <div class="max-w-4xl mx-auto">
@@ -147,22 +123,26 @@
             </div>
 
             {{-- ── GRID PRODUK ── --}}
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 
                 @forelse($katalog as $prod)
-                    @php $habis = $prod->stok_tersedia <= 0 || $prod->harga_saat_ini <= 0; @endphp
+                    @php
+                        $kuotaHabis = $prod->stok_tersedia <= 0;
+                        $hargaBelumTersedia = $prod->harga_saat_ini <= 0;
+                        $tidakTersedia = $kuotaHabis || $hargaBelumTersedia;
+                    @endphp
 
                     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col
                                 transition-transform active:scale-[0.98]"
                          x-show="searchQuery === ''
-                               || '{{ strtolower($prod->nama_jenis) }}'.includes(searchQuery.toLowerCase())"
+                               || '{{ strtolower(($prod->nama_jenis ?? '') . ' ' . ($prod->nama_grade ?? '') . ' ' . ($prod->label_ukuran ?? '')) }}'.includes(searchQuery.toLowerCase())">
 
                         {{-- Foto --}}
                         <div class="relative w-full aspect-[4/3] bg-slate-100 overflow-hidden">
                             @if($prod->foto_terbaru)
                                 <img src="{{ asset('storage/'.$prod->foto_terbaru) }}"
-                                     alt="{{ $prod->nama_kolam }}"
-                                     class="w-full h-full object-cover {{ $habis ? 'opacity-50 grayscale' : '' }}">
+                                     alt="Benur {{ $prod->nama_jenis }} {{ $prod->nama_grade }}"
+                                     class="w-full h-full object-cover {{ $tidakTersedia ? 'opacity-50 grayscale' : '' }}">
                                 <div class="absolute inset-x-0 bottom-0 h-10
                                             bg-gradient-to-t from-black/50 to-transparent
                                             flex items-end px-2 pb-1.5">
@@ -190,10 +170,10 @@
                                 <i class="fa-regular fa-heart text-slate-400 text-[11px]"></i>
                             </button>
 
-                            @if($habis)
+                            @if($tidakTersedia)
                                 <div class="absolute inset-0 flex items-center justify-center bg-black/20">
                                     <span class="bg-slate-800/80 text-white text-[9px] font-black px-2.5 py-1 rounded-lg backdrop-blur-sm">
-                                        Stok Habis
+                                        {{ $kuotaHabis ? 'Kuota Habis' : 'Harga Belum Tersedia' }}
                                     </span>
                                 </div>
                             @endif
@@ -229,7 +209,7 @@
                                          - normal → hitam slate-800
                                          "ekor" → abu-abu kecil
                                     --}}
-                                    @if($habis)
+                                    @if($kuotaHabis)
                                         <p class="text-[11px] font-black text-rose-500 leading-none">
                                             {{ number_format($prod->stok_tersedia, 0, ',', '.') }}
                                             <span class="text-[8px] font-medium text-slate-400">ekor</span>
@@ -270,10 +250,10 @@
                                     {{-- Ikon keranjang: biru di bg biru muda --}}
                                     <button type="submit"
                                         class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors
-                                               {{ !$habis
+                                               {{ !$tidakTersedia
                                                     ? 'bg-blue-50 border border-blue-100 text-blue-600 hover:bg-blue-100'
                                                     : 'bg-slate-50 border border-slate-200 text-slate-300 cursor-not-allowed' }}"
-                                        {{ $habis ? 'disabled' : '' }}>
+                                        {{ $tidakTersedia ? 'disabled' : '' }}>
                                         <i class="fa-solid fa-cart-shopping text-sm"></i>
                                     </button>
                                 </form>

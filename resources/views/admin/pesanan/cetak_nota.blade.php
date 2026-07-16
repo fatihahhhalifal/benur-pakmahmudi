@@ -99,14 +99,10 @@
                             : \Carbon\Carbon::parse($pesanan->waktu_pelunasan_final ?? now())->format('d M Y - H:i') }}
                         WIB
                     </p>
-                    <p class="text-slate-500 font-medium">
-                        Asal Pengambilan:
-                        @if($items->count() > 1)
-                            {{ $items->count() }} Kolam
-                        @else
-                            {{ $namaKolamPertama }}
-                        @endif
-                    </p>
+                    {{--
+                        FIX: baris "Asal Pengambilan" (nama kolam / jumlah kolam) DIHAPUS.
+                        Kolam adalah alokasi stok internal, tidak relevan ditampilkan ke customer.
+                    --}}
                     <div class="mt-1">
                         <span class="font-black uppercase text-[9px] px-1.5 py-0.5 rounded border tracking-wider inline-block bg-slate-100 text-slate-600 border-slate-200">
                             {{ str_replace('_', ' ', $pesanan->status) }}
@@ -115,7 +111,7 @@
                 </div>
             </div>
 
-            {{-- 3. TABEL PRODUK — ✅ LOOP PER ITEM --}}
+            {{-- 3. TABEL PRODUK — ✅ LOOP PER SKU (bukan per kolam) --}}
             <div class="border border-slate-200 rounded-xl overflow-hidden mb-5 bg-transparent">
                 <table class="w-full text-left border-collapse text-[11px]">
                     <thead>
@@ -127,12 +123,11 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-slate-700 font-medium">
-                        {{-- ✅ Loop semua item / kolam --}}
                         @foreach($items as $item)
                         <tr>
                             <td class="px-4 py-3 align-top">
                                 <span class="font-black text-slate-800 uppercase block mb-0.5">
-                                    {{ $item->nama_kolam }} — Benur {{ $item->nama_jenis ?? 'Vaname' }}
+                                    Benur {{ $item->nama_jenis ?? 'Vaname' }}
                                 </span>
                                 <span class="text-[10px] text-slate-400 font-bold uppercase block">
                                     Size Var: PL-{{ $item->label_ukuran ?? '-' }}
@@ -171,12 +166,12 @@
                         </tr>
                         @endforeach
                     </tbody>
-                    {{-- Baris total jika lebih dari 1 item --}}
+                    {{-- Baris total jika lebih dari 1 SKU produk --}}
                     @if($items->count() > 1)
                     <tfoot>
                         <tr class="bg-slate-50 border-t-2 border-slate-200">
                             <td colspan="3" class="px-4 py-2.5 text-right text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                                Total Semua Kolam:
+                                Total Semua Produk:
                             </td>
                             <td class="px-4 py-2.5 text-right font-mono font-black text-slate-900">
                                 Rp{{ number_format($subtotalKotor, 0, ',', '.') }}

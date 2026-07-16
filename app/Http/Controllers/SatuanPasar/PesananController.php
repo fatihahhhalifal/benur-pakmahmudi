@@ -310,6 +310,8 @@ class PesananController extends Controller
 
     /**
      * ✅ FIX: FITUR INVOICE GENERATOR — ambil SEMUA item detail pesanan, bukan first()
+     * ✅ FIX #2: item dengan SKU sama (jenis+ukuran+grade sama) digabung jadi satu baris
+     *            di nota, meski asalnya dari kolam/siklus berbeda.
      */
     public function cetakInvoice(Request $request, int $id): View
     {
@@ -354,7 +356,10 @@ class PesananController extends Controller
             abort(404, 'Detail pesanan tidak ditemukan.');
         }
 
-        // Hitung harga aktual dari master_harga per item, inject ke tiap item
+        // Hitung harga aktual dari master_harga per item (per kolam/siklus),
+        // inject ke tiap item. Ini WAJIB dilakukan per baris asli sebelum
+        // digabung, karena konversi_per_kantong bisa beda tiap kolam
+        // meski jenis/ukuran/grade-nya sama.
         foreach ($items as $item) {
             $hargaMaster = DB::table('master_harga')
                 ->where('jenis_id', $item->jenis_id)
@@ -373,6 +378,36 @@ class PesananController extends Controller
                 ? $item->total_ekor_booking * $item->harga_real
                 : $item->total_ekor_aktual * $item->harga_real;
         }
+
+        // ✅ FIX: Gabungkan item dengan SKU sama (jenis+ukuran+grade sama)
+        // meski berasal dari kolam/siklus berbeda, agar tidak duplikat di nota.
+        // Nilai kuantitas & subtotal dijumlahkan; konversi_per_kantong yang
+        // ditampilkan adalah rata-rata tertimbang (hanya untuk display,
+        // bukan dipakai ulang untuk kalkulasi).
+        $items = $items
+            ->groupBy(function ($item) {
+                return $item->jenis_id . '|' . $item->ukuran_id . '|' . $item->grade_id;
+            })
+            ->map(function ($group) {
+                $first = clone $group->first();
+
+                $first->jumlah_sak_dipesan        = $group->sum('jumlah_sak_dipesan');
+                $first->kantong_eceran_dipesan     = $group->sum('kantong_eceran_dipesan');
+                $first->total_kantong_hitung       = $group->sum('total_kantong_hitung');
+                $first->total_kantong_riil_muat    = $group->sum('total_kantong_riil_muat');
+                $first->total_ekor_booking         = $group->sum('total_ekor_booking');
+                $first->total_ekor_aktual          = $group->sum('total_ekor_aktual');
+                $first->subtotal_item              = $group->sum('subtotal_item');
+                $first->diskon_pembulatan_manual   = $group->sum('diskon_pembulatan_manual');
+
+                $totalKantongRiil = $group->sum('total_kantong_riil_muat');
+                $first->konversi_per_kantong = $totalKantongRiil > 0
+                    ? (int) round($first->total_ekor_aktual / $totalKantongRiil)
+                    : $first->konversi_per_kantong;
+
+                return $first;
+            })
+            ->values();
 
         // Agregat untuk ringkasan finansial
         $subtotalKotor   = $items->sum('subtotal_item');

@@ -99,6 +99,21 @@ class LaporanKeuanganController extends Controller
                 DB::raw("'KELUAR' as jenis_arus")
             );
 
+        // Modal awal pembelian benih disimpan di siklus_kolam. Satukan sebagai
+        // jurnal virtual agar laporan keuangan konsisten dengan jurnal BOP.
+        $modalBenih = DB::table('siklus_kolam')
+            ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
+            ->where('siklus_kolam.modal_awal_rupiah', '>', 0)
+            ->select(
+                DB::raw("CONCAT('modal-benih-', siklus_kolam.id) as id"),
+                'siklus_kolam.waktu_tabur as tanggal',
+                'master_kolam.nama_kolam',
+                DB::raw("'Modal Benih' as pos_akun"),
+                DB::raw("'Pembelian benih awal siklus' as rincian"),
+                'siklus_kolam.modal_awal_rupiah as nominal',
+                DB::raw("'KELUAR' as jenis_arus")
+            );
+
         $pendapatan = DB::table('pesanan')
             ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
             ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
@@ -114,7 +129,9 @@ class LaporanKeuanganController extends Controller
                 DB::raw("'MASUK' as jenis_arus")
             );
 
-        $koleksiData = $pengeluaran->unionAll($pendapatan)
+        $koleksiData = $pengeluaran
+            ->unionAll($modalBenih)
+            ->unionAll($pendapatan)
             ->orderBy('tanggal', 'desc')
             ->get();
 
