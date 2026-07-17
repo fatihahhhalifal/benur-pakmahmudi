@@ -148,23 +148,29 @@ class ImportHistoriPesanan extends Command
                 $kolamArsipId = DB::table('master_kolam')->where('nama_kolam', 'ARSIP HISTORIS')->value('id');
                 if (!$kolamArsipId) {
                     $kolamArsipId = DB::table('master_kolam')->insertGetId([
-                        'nama_kolam' => 'ARSIP HISTORIS',
-                        'created_at' => $tglPreorder,
-                        'updated_at' => $tglPreorder,
+                        'nama_kolam'          => 'ARSIP HISTORIS',
+                        'kapasitas_maksimal'  => 0,
+                        'created_at'          => $tglPreorder,
+                        'updated_at'          => $tglPreorder,
                     ]);
                 }
 
                 // Siklus dibuat PER TRANSAKSI (bukan digabung per SKU) supaya
                 // tgl_tabur asli masing-masing transaksi tetap akurat.
                 $siklusId = DB::table('siklus_kolam')->insertGetId([
-                    'kolam_id'       => $kolamArsipId,
-                    'jenis_id'       => $jenisId,
-                    'ukuran_id'      => $ukuranId,
-                    'grade_id'       => $gradeId,
-                    'waktu_tabur'    => $tglTabur,
-                    'stok_tersedia'  => 0,
-                    'created_at'     => $tglTabur,
-                    'updated_at'     => $tglTabur,
+                    'kolam_id'              => $kolamArsipId,
+                    'jenis_id'              => $jenisId,
+                    'ukuran_id'             => $ukuranId,
+                    'grade_id'              => $gradeId,
+                    'modal_awal_rupiah'     => 0,
+                    'jumlah_tebar_awal'     => $jumlahEkor,
+                    'stok_tersedia'         => 0,
+                    'potongan_harga_manual' => 0,
+                    'waktu_tabur'           => $tglTabur,
+                    'status'                => 'selesai',
+                    'waktu_kuras'           => $tglPelunasan,
+                    'created_at'            => $tglTabur,
+                    'updated_at'            => $tglTabur,
                 ]);
 
                 // 4. Insert pesanan (status langsung selesai/lunas)

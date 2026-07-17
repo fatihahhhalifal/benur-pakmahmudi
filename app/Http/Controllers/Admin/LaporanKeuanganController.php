@@ -153,6 +153,10 @@ class LaporanKeuanganController extends Controller
             if ($request->filled('kategori') && $request->kategori !== 'semua') {
                 $koleksiData = $koleksiData->where('pos_akun', $request->kategori);
             }
+
+            if ($request->filled('kolam') && $request->kolam !== 'semua') {
+                $koleksiData = $koleksiData->where('nama_kolam', $request->kolam);
+            }
         }
 
         return $koleksiData->values();

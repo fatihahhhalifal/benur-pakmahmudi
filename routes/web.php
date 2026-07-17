@@ -14,6 +14,7 @@ use App\Http\Controllers\MonitoringKolamController;
 use App\Http\Controllers\SatuanPasar\KatalogController;
 use App\Http\Controllers\SatuanPasar\AdminPesananController;
 use App\Http\Controllers\SatuanPasar\PesananController;
+use App\Http\Controllers\SatuanPasar\FotoProdukController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 
@@ -119,6 +120,12 @@ Route::middleware(['auth', 'role:admin,pemilik,operator'])->group(function () {
         Route::get('/pesanan/{id}/invoice', [PesananController::class, 'cetakInvoice'])->name('pesanan.invoice');
         Route::get('/pesanan/{id}/surat-jalan', [PesananController::class, 'cetakSuratJalan'])->name('pesanan.suratjalan');
     });
+
+        // Foto Produk Siklus
+        Route::post('/admin/siklus/{siklus}/foto/upload', [FotoProdukController::class, 'upload'])
+            ->name('admin.siklus.foto.upload');
+        Route::delete('/admin/siklus/foto/{id}/hapus', [FotoProdukController::class, 'hapus'])
+            ->name('admin.siklus.foto.hapus');
 });
 
 // =========================================================================

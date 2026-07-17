@@ -370,6 +370,7 @@
                         <thead>
                             <tr class="text-[10px] font-black text-slate-400 uppercase border-b border-slate-100 pb-2">
                                 <th class="py-2.5 text-center w-12">No</th>
+                                <th class="py-2.5 text-center w-16">Foto Skala</th>
                                 <th class="py-2.5 w-1/4">Kategori Ukuran</th>
                                 <th class="py-2.5 w-2/5">Deskripsi</th>
                                 <th class="py-2.5 text-center w-20">Kode</th>
@@ -383,6 +384,17 @@
                                 <tr class="hover:bg-slate-50/40 transition-colors" x-data="{ openEditUkuran: false }"
                                     x-show="searchQuery === '' || '{{ addslashes(strtolower($u->ukuran)) }}'.includes(searchQuery.toLowerCase())">
                                     <td class="py-3 text-center text-slate-400 font-medium">{{ $index + 1 }}</td>
+                                    <td class="py-3 text-center">
+                                        @if ($u->foto_skala ?? null)
+                                            <img src="{{ asset('storage/'.$u->foto_skala) }}"
+                                                 class="w-10 h-10 rounded-lg object-cover border border-slate-200 mx-auto"
+                                                 alt="Foto skala PL {{ $u->ukuran }}">
+                                        @else
+                                            <span class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-slate-300 mx-auto">
+                                                <i class="fa-solid fa-ruler text-xs"></i>
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td class="py-3 text-slate-900 font-bold text-sm">PL - {{ $u->ukuran }}</td>
                                     <td class="py-3 text-slate-500 font-medium">{{ $u->deskripsi ?? '-' }}</td>
                                     <td class="py-3 text-center"><span
@@ -416,7 +428,7 @@
 
                                                     {{-- PERBAIKAN ROUTE ACTION --}}
                                                     <form action="{{ route('pengaturan.updateUkuran', $u->id) }}"
-                                                        method="POST" class="space-y-3">
+                                                        method="POST" enctype="multipart/form-data" class="space-y-3">
                                                         @csrf @method('PUT')
                                                         <div>
                                                             <label
@@ -440,6 +452,21 @@
                                                             <textarea name="deskripsi"
                                                                 class="w-full mt-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 h-14 resize-none">{{ $u->deskripsi }}</textarea>
                                                         </div>
+                                                        <div>
+                                                            <label
+                                                                class="text-[9px] font-bold text-slate-400 uppercase">Foto Skala Ukuran
+                                                                <span class="text-slate-400 text-[8px]">(Opsional — foto PL berdampingan penggaris/koin)</span></label>
+                                                            @if ($u->foto_skala ?? null)
+                                                                <div class="flex items-center gap-2 mt-1 mb-1.5">
+                                                                    <img src="{{ asset('storage/'.$u->foto_skala) }}"
+                                                                         class="w-12 h-12 rounded-lg object-cover border border-slate-200"
+                                                                         alt="Foto skala saat ini">
+                                                                    <span class="text-[9px] text-slate-400 font-medium">Foto saat ini. Upload baru untuk mengganti.</span>
+                                                                </div>
+                                                            @endif
+                                                            <input type="file" name="foto_skala" accept="image/*"
+                                                                class="w-full mt-1 text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700">
+                                                        </div>
                                                         <div class="flex gap-2 pt-1.5">
                                                             <button type="button" @click="openEditUkuran = false"
                                                                 class="flex-1 py-2 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">Batal</button>
@@ -456,7 +483,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="py-6 text-center text-slate-400 italic">Belum ada data
+                                    <td colspan="6" class="py-6 text-center text-slate-400 italic">Belum ada data
                                         kriteria ukuran.</td>
                                 </tr>
                             @endforelse
@@ -713,7 +740,7 @@
                 <div @click.away="openModalUkuran = false" class="bg-white w-full max-w-sm rounded-2xl p-5 shadow-xl">
                     <h2 class="text-base font-extrabold text-slate-800 mb-3 uppercase tracking-tight">Daftarkan Ukuran
                         Baru</h2>
-                    <form action="{{ route('pengaturan.storeUkuran') }}" method="POST" class="space-y-3">
+                    <form action="{{ route('pengaturan.storeUkuran') }}" method="POST" enctype="multipart/form-data" class="space-y-3">
                         @csrf
                         <div>
                             <label class="text-[9px] font-bold text-slate-400 uppercase">Label Ukuran (PL) <span
@@ -732,6 +759,12 @@
                             <label class="text-[9px] font-bold text-slate-400 uppercase">Deskripsi</label>
                             <textarea name="deskripsi" placeholder="Standar klasifikasi..."
                                 class="w-full mt-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 h-14 resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-bold text-slate-400 uppercase">Foto Skala Ukuran
+                                <span class="text-slate-400 text-[8px]">(Opsional — foto PL berdampingan penggaris/koin)</span></label>
+                            <input type="file" name="foto_skala" accept="image/*"
+                                class="w-full mt-1 text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700">
                         </div>
                         <div class="flex gap-2 pt-1.5">
                             <button type="button" @click="openModalUkuran = false"

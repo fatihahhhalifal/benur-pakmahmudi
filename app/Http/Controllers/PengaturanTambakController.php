@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class PengaturanTambakController extends Controller
 {
@@ -94,25 +95,98 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Kriteria jenis benur berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'jenis']);
     }
 
+    /**
+     * REVISI: storeUkuran sekarang menerima upload opsional 'foto_skala' —
+     * foto referensi ukuran (mis. PL berdampingan dengan penggaris/koin) yang
+     * berlaku untuk SEMUA kolam/siklus dengan ukuran ini (bukan per-siklus).
+     */
     public function storeUkuran(Request $request)
     {
-        $request->validate(['ukuran' => 'required|unique:ukuran_benur,ukuran']);
-        DB::table('ukuran_benur')->insert(['ukuran' => $request->ukuran, 'kode' => $request->kode, 'deskripsi' => $request->deskripsi, 'created_at' => now(), 'updated_at' => now()]);
+        $request->validate([
+            'ukuran'     => 'required|unique:ukuran_benur,ukuran',
+            'foto_skala' => 'nullable|image|mimes:jpeg,png,jpg|max:3072',
+        ]);
+
+        $pathFotoSkala = null;
+        if ($request->hasFile('foto_skala')) {
+            $pathFotoSkala = $request->file('foto_skala')->store('skala_ukuran', 'public');
+        }
+
+        DB::table('ukuran_benur')->insert([
+            'ukuran'     => $request->ukuran,
+            'kode'       => $request->kode,
+            'deskripsi'  => $request->deskripsi,
+            'foto_skala' => $pathFotoSkala,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         return redirect()->back()->with('success', 'Kategori ukuran benur baru berhasil ditambahkan.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
+    /**
+     * REVISI: updateUkuran mendukung ganti foto skala. Foto lama dihapus dari
+     * storage saat diganti agar tidak menumpuk file yatim (orphan).
+     */
     public function updateUkuran(Request $request, int $id)
     {
-        $request->validate(['ukuran' => 'required|unique:ukuran_benur,ukuran,'.$id]);
-        DB::table('ukuran_benur')->where('id', $id)->update(['ukuran' => $request->ukuran, 'kode' => $request->kode, 'deskripsi' => $request->deskripsi, 'updated_at' => now()]);
+        $request->validate([
+            'ukuran'     => 'required|unique:ukuran_benur,ukuran,'.$id,
+            'foto_skala' => 'nullable|image|mimes:jpeg,png,jpg|max:3072',
+        ]);
+
+        $ukuran = DB::table('ukuran_benur')->where('id', $id)->first();
+        if (!$ukuran) return redirect()->back()->withErrors(['gagal' => 'Kategori ukuran tidak ditemukan.']);
+
+        $pathFotoSkala = $ukuran->foto_skala;
+        if ($request->hasFile('foto_skala')) {
+            if ($pathFotoSkala) {
+                Storage::disk('public')->delete($pathFotoSkala);
+            }
+            $pathFotoSkala = $request->file('foto_skala')->store('skala_ukuran', 'public');
+        }
+
+        DB::table('ukuran_benur')->where('id', $id)->update([
+            'ukuran'     => $request->ukuran,
+            'kode'       => $request->kode,
+            'deskripsi'  => $request->deskripsi,
+            'foto_skala' => $pathFotoSkala,
+            'updated_at' => now(),
+        ]);
         return redirect()->back()->with('success', 'Kategori ukuran benur berhasil diperbarui.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
+    /**
+     * REVISI: hapus juga file foto skala dari storage saat kategori ukuran dihapus,
+     * supaya tidak menyisakan file yatim di disk.
+     */
     public function destroyUkuran(int $id)
     {
         if ($this->cekRelasi('ukuran_id', $id)) return redirect()->back()->withErrors(['gagal' => 'Data ukuran sedang digunakan pada matriks aktif hulu.']);
+
+        $ukuran = DB::table('ukuran_benur')->where('id', $id)->first();
+        if ($ukuran && $ukuran->foto_skala) {
+            Storage::disk('public')->delete($ukuran->foto_skala);
+        }
+
         DB::table('ukuran_benur')->where('id', $id)->delete();
         return redirect()->back()->with('success', 'Kategori ukuran benur berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
+    }
+
+    /**
+     * Hapus khusus foto skala tanpa menghapus kategori ukurannya (dipakai
+     * tombol "Hapus Foto" di form edit ukuran, opsional untuk admin).
+     */
+    public function destroyFotoSkalaUkuran(int $id)
+    {
+        $ukuran = DB::table('ukuran_benur')->where('id', $id)->first();
+        if (!$ukuran) return redirect()->back()->withErrors(['gagal' => 'Kategori ukuran tidak ditemukan.']);
+
+        if ($ukuran->foto_skala) {
+            Storage::disk('public')->delete($ukuran->foto_skala);
+            DB::table('ukuran_benur')->where('id', $id)->update(['foto_skala' => null, 'updated_at' => now()]);
+        }
+
+        return redirect()->back()->with('success', 'Foto skala ukuran berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
     public function storeGrade(Request $request)

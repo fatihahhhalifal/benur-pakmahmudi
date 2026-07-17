@@ -13,14 +13,42 @@
             ->where('siklus_id', $produk->id)
             ->orderBy('tanggal_sampling', 'desc')
             ->get();
-        $fotoTerbaru = $galeri->whereNotNull('path_foto')->first();
+
+        // REVISI: array foto terstruktur untuk carousel. Tiap slide dapat label &
+        // tipe sendiri ('sampling' atau 'skala') supaya badge/label di UI tidak
+        // bergantung pada asumsi posisi index, melainkan pada data itu sendiri.
+        $galeriFotos = $galeri->whereNotNull('path_foto')->values()->map(function ($g, $idx) {
+            return [
+                'url'   => asset('storage/' . $g->path_foto),
+                'label' => $idx === 0 ? 'Terbaru' : 'Riwayat Sampling',
+                'sub'   => \Carbon\Carbon::parse($g->tanggal_sampling)->diffForHumans(),
+                'tipe'  => 'sampling',
+            ];
+        })->toArray();
+
+        // REVISI: foto skala ukuran diambil dari master data ukuran_benur (1 foto
+        // berlaku untuk semua produk dengan ukuran yang sama), diselipkan sebagai
+        // slide tambahan dengan label jelas "Skala Ukuran" agar tidak tertukar
+        // dengan foto kondisi kolam/sampling.
+        $fotoSkalaPath = \Illuminate\Support\Facades\DB::table('ukuran_benur')
+            ->where('id', $produk->ukuran_id)
+            ->value('foto_skala');
+
+        if ($fotoSkalaPath) {
+            $galeriFotos[] = [
+                'url'   => asset('storage/' . $fotoSkalaPath),
+                'label' => 'Skala Ukuran',
+                'sub'   => 'PL ' . $produk->label_ukuran,
+                'tipe'  => 'skala',
+            ];
+        }
 
         $deskripsiJenis  = $produk->deskripsi_jenis  ?? 'Benih Vaname unggul dengan SR tinggi dan adaptif.';
         $deskripsiUkuran = $produk->deskripsi_ukuran ?? 'Post Larva ukuran ekspor, siap tebar dengan organ sempurna.';
         $deskripsiGrade  = $produk->deskripsi_grade  ?? 'Kualitas Super, lincah, aktif, dan teruji bebas penyakit.';
     @endphp
 
-    <div x-data="productDetail()"
+    <div x-data="productDetail(@js($galeriFotos))"
          x-init="@if(session('success')) isCartOpen = true @endif"
          class="font-sans text-slate-800 pb-40 md:pb-10">
 
@@ -34,9 +62,19 @@
                            flex items-center justify-center text-white transition-colors">
                 <i class="fa-solid fa-xmark text-lg"></i>
             </button>
+            <button x-show="photos.length > 1" @click.stop="prev()"
+                    class="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20
+                           flex items-center justify-center text-white transition-colors">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
             <img :src="activeImage"
                  class="max-w-full max-h-[88vh] object-contain rounded-xl"
                  @click.away="isLightboxOpen = false">
+            <button x-show="photos.length > 1" @click.stop="next()"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20
+                           flex items-center justify-center text-white transition-colors">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
         </div>
 
         {{-- ── PAGE WRAPPER ── --}}
@@ -58,11 +96,15 @@
                          ════════════════════════════════════ --}}
                     <div>
 
-                        {{-- ── HERO FOTO ── --}}
-                        <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 mb-3">
-                            <div @click="if(activeImage) isLightboxOpen = true" class="w-full h-full cursor-zoom-in">
+                        {{-- ── HERO FOTO / CAROUSEL ── --}}
+                        <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 mb-3 select-none"
+                             @touchstart="touchStart($event)"
+                             @touchmove="touchMove($event)"
+                             @touchend="touchEnd()">
+
+                            <div @click="if(activeImage) isLightboxOpen = true" class="w-full h-full cursor-zoom-in relative">
                                 <template x-if="activeImage">
-                                    <img :src="activeImage" class="w-full h-full object-cover">
+                                    <img :src="activeImage" class="w-full h-full object-cover pointer-events-none">
                                 </template>
                                 <template x-if="!activeImage">
                                     <div class="w-full h-full bg-gradient-to-br from-slate-100 to-blue-50
@@ -72,20 +114,60 @@
                                 </template>
                             </div>
 
+                            {{-- panah navigasi (desktop, hanya muncul kalau foto > 1) --}}
+                            <button type="button" x-show="photos.length > 1" @click.stop="prev()"
+                                    class="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full
+                                           bg-white/80 hover:bg-white shadow-sm items-center justify-center
+                                           text-slate-600 transition-colors z-10">
+                                <i class="fa-solid fa-chevron-left text-xs"></i>
+                            </button>
+                            <button type="button" x-show="photos.length > 1" @click.stop="next()"
+                                    class="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full
+                                           bg-white/80 hover:bg-white shadow-sm items-center justify-center
+                                           text-slate-600 transition-colors z-10">
+                                <i class="fa-solid fa-chevron-right text-xs"></i>
+                            </button>
+
                             {{-- badges atas --}}
                             <div class="absolute top-3 left-3 flex gap-1.5">
                                 <span class="bg-blue-600 text-white text-[9px] font-black px-2 py-1 rounded-lg shadow-sm">
                                     DOC {{ $produk->doc }} Hari
                                 </span>
                             </div>
-                            @if($fotoTerbaru?->tanggal_sampling)
-                            <div class="absolute top-3 right-3
-                                        bg-teal-500/85 backdrop-blur-sm text-white text-[8px] font-black
+
+                            {{-- counter foto ala Shopee, "1/5" --}}
+                            <div x-show="photos.length > 0"
+                                 class="absolute top-3 right-3
+                                        bg-black/50 backdrop-blur-sm text-white text-[9px] font-black
                                         px-2 py-1 rounded-lg flex items-center gap-1">
-                                <i class="fa-solid fa-camera text-[7px]"></i>
-                                Foto {{ \Carbon\Carbon::parse($fotoTerbaru->tanggal_sampling)->diffForHumans() }}
+                                <i class="fa-solid fa-image text-[8px]"></i>
+                                <span x-text="(activeIndex + 1) + '/' + photos.length"></span>
                             </div>
-                            @endif
+
+                            {{-- badge label foto aktif — dibaca dari data foto, bukan asumsi posisi.
+                                 Foto sampling: warna teal + ikon kamera. Foto skala ukuran: warna amber + ikon penggaris,
+                                 supaya customer jelas membedakan "kondisi terkini" vs "referensi ukuran". --}}
+                            <div x-show="photos.length > 0 && photos[activeIndex]"
+                                 class="absolute bottom-3 left-3 backdrop-blur-sm text-white text-[8px] font-black
+                                        px-2 py-1 rounded-lg flex items-center gap-1"
+                                 :class="photos[activeIndex]?.tipe === 'skala' ? 'bg-amber-500/90' : 'bg-teal-500/85'">
+                                <i class="fa-solid text-[7px]"
+                                   :class="photos[activeIndex]?.tipe === 'skala' ? 'fa-ruler-combined' : 'fa-camera'"></i>
+                                <span x-text="photos[activeIndex]?.tipe === 'skala'
+                                                ? 'Skala Ukuran'
+                                                : (photos[activeIndex]?.label + ' · ' + photos[activeIndex]?.sub)"></span>
+                            </div>
+
+                            {{-- dot indicator ala Shopee --}}
+                            <div x-show="photos.length > 1"
+                                 class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+                                <template x-for="(p, idx) in photos" :key="idx">
+                                    <button type="button" @click.stop="activeIndex = idx"
+                                            class="rounded-full transition-all"
+                                            :class="activeIndex === idx ? 'w-4 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50'">
+                                    </button>
+                                </template>
+                            </div>
 
                             {{-- zoom hint --}}
                             <div class="absolute bottom-3 right-3
@@ -96,26 +178,30 @@
                         </div>
 
                         {{-- ── THUMBNAIL GALERI ── --}}
-                        @if($galeri->whereNotNull('path_foto')->count() > 1)
-                        <div class="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-0.5">
-                            @foreach($galeri->whereNotNull('path_foto') as $g)
-                            <button type="button"
-                                    @click="activeImage = '{{ asset('storage/'.$g->path_foto) }}'"
-                                    :class="activeImage === '{{ asset('storage/'.$g->path_foto) }}'
-                                                ? 'border-blue-600 opacity-100'
-                                                : 'border-transparent opacity-50 hover:opacity-75'"
-                                    class="relative w-14 h-14 rounded-xl border-2 overflow-hidden shrink-0 transition-all bg-slate-100">
-                                <img src="{{ asset('storage/'.$g->path_foto) }}" class="w-full h-full object-cover">
-                                @if($loop->first)
-                                <span class="absolute bottom-0 inset-x-0 bg-blue-600/80 text-white
-                                             text-[6px] font-black text-center py-0.5">
-                                    TERBARU
-                                </span>
-                                @endif
-                            </button>
-                            @endforeach
-                        </div>
-                        @endif
+                        <template x-if="photos.length > 1">
+                            <div class="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-0.5">
+                                <template x-for="(p, idx) in photos" :key="idx">
+                                    <button type="button"
+                                            @click="activeIndex = idx"
+                                            :class="activeIndex === idx
+                                                        ? (p.tipe === 'skala' ? 'border-amber-500 opacity-100' : 'border-blue-600 opacity-100')
+                                                        : 'border-transparent opacity-50 hover:opacity-75'"
+                                            class="relative w-14 h-14 rounded-xl border-2 overflow-hidden shrink-0 transition-all bg-slate-100">
+                                        <img :src="p.url" class="w-full h-full object-cover">
+                                        <span x-show="p.tipe === 'skala'"
+                                              class="absolute bottom-0 inset-x-0 bg-amber-500/85 text-white
+                                                     text-[6px] font-black text-center py-0.5">
+                                            SKALA
+                                        </span>
+                                        <span x-show="p.label === 'Terbaru'"
+                                              class="absolute bottom-0 inset-x-0 bg-blue-600/80 text-white
+                                                     text-[6px] font-black text-center py-0.5">
+                                            TERBARU
+                                        </span>
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
 
                         {{-- ── JAMINAN ── --}}
                         <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-3 md:mb-0">
@@ -355,9 +441,37 @@
 
     <script>
         document.addEventListener('alpine:init', () => {
-            Alpine.data('productDetail', () => ({
+            Alpine.data('productDetail', (fotoAwal = []) => ({
                 isLightboxOpen: false,
-                activeImage:    '{{ $fotoTerbaru && $fotoTerbaru->path_foto ? asset('storage/'.$fotoTerbaru->path_foto) : '' }}',
+
+                // ── GALERI / CAROUSEL FOTO ──
+                photos:      fotoAwal,   // [{ url, tanggal, relatif }, ...] terurut dari yang terbaru
+                activeIndex: 0,
+                _touchX:     null,
+
+                get activeImage() {
+                    return this.photos.length ? this.photos[this.activeIndex].url : '';
+                },
+                next() {
+                    if (!this.photos.length) return;
+                    this.activeIndex = (this.activeIndex + 1) % this.photos.length;
+                },
+                prev() {
+                    if (!this.photos.length) return;
+                    this.activeIndex = (this.activeIndex - 1 + this.photos.length) % this.photos.length;
+                },
+                touchStart(e) { this._touchX = e.touches[0].clientX; this._touchXEnd = null; },
+                touchMove(e)  { this._touchXEnd = e.touches[0].clientX; },
+                touchEnd() {
+                    if (this._touchX === null || this._touchXEnd == null) { this._touchX = null; this._touchXEnd = null; return; }
+                    const delta = this._touchXEnd - this._touchX;
+                    const THRESHOLD = 40; // px minimal geser supaya dianggap swipe
+                    if (delta > THRESHOLD) this.prev();
+                    else if (delta < -THRESHOLD) this.next();
+                    this._touchX = null;
+                    this._touchXEnd = null;
+                },
+
                 sak:   1,
                 ecer:  0,
                 harga:        {{ $hargaReal }},
