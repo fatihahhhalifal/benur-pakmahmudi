@@ -12,9 +12,6 @@ use Illuminate\View\View;
 
 class PesananController extends Controller
 {
-    /**
-     * INDEX: Tampilkan daftar pesanan untuk Admin & Operator
-     */
     public function index(): View
     {
         $user = Auth::user();
@@ -135,17 +132,11 @@ class PesananController extends Controller
         return view('admin.pesanan.index', compact('pesanan', 'stats'));
     }
 
-    /**
-     * Menampilkan daftar seluruh preorder masuk di Dashboard Admin (Fallback Redirect)
-     */
     public function dashboardAdmin(): RedirectResponse
     {
         return redirect()->route('admin.pesanan.index');
     }
 
-    /**
-     * VERIFIKASI DP (NOTA 1)
-     */
     public function konfirmasiDP(Request $request, int $id): RedirectResponse
     {
         $detailOrder = DB::table('detail_pesanan')
@@ -169,9 +160,6 @@ class PesananController extends Controller
         return redirect()->back()->with('success', 'Uang muka sebesar Rp ' . number_format($nominalDpOtomatis, 0, ',', '.') . ' berhasil diverifikasi otomatis! NOTA DP Resmi diterbitkan & Harga Kontrak dikunci.');
     }
 
-    /**
-     * TAHAP 1 (OPERATOR / ADMIN): Input muatan fisik riil dari lapangan
-     */
     public function inputMuat(Request $request, int $id): RedirectResponse
     {
         $request->validate([
@@ -218,9 +206,6 @@ class PesananController extends Controller
         });
     }
 
-    /**
-     * TAHAP 2 (ADMIN): Kalkulasi tagihan final
-     */
     public function kalkulasiFinal(Request $request, int $id): RedirectResponse
     {
         $request->validate([
@@ -294,9 +279,6 @@ class PesananController extends Controller
         });
     }
 
-    /**
-     * TAHAP 3 (ADMIN): Verifikasi pelunasan
-     */
     public function validasiPelunasan(Request $request, int $id): RedirectResponse
     {
         DB::table('pesanan')->where('id', $id)->update([
@@ -308,16 +290,10 @@ class PesananController extends Controller
         return redirect()->back()->with('with_invoice_id', $id)->with('success', 'Pembayaran diverifikasi! NOTA PELUNASAN resmi diterbitkan.');
     }
 
-    /**
-     * ✅ FIX: FITUR INVOICE GENERATOR — ambil SEMUA item detail pesanan, bukan first()
-     * ✅ FIX #2: item dengan SKU sama (jenis+ukuran+grade sama) digabung jadi satu baris
-     *            di nota, meski asalnya dari kolam/siklus berbeda.
-     */
     public function cetakInvoice(Request $request, int $id): View
     {
         $type = $request->query('type', 'dp');
 
-        // Data header pesanan saja (tanpa join detail)
         $pesanan = DB::table('pesanan')
             ->join('users', 'pesanan.user_id', '=', 'users.id')
             ->select(
@@ -332,7 +308,6 @@ class PesananController extends Controller
             abort(404, 'Data transaksi tidak ditemukan.');
         }
 
-        // ✅ Ambil SEMUA item (semua kolam) dalam pesanan ini
         $items = DB::table('detail_pesanan')
             ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
@@ -356,10 +331,6 @@ class PesananController extends Controller
             abort(404, 'Detail pesanan tidak ditemukan.');
         }
 
-        // Hitung harga aktual dari master_harga per item (per kolam/siklus),
-        // inject ke tiap item. Ini WAJIB dilakukan per baris asli sebelum
-        // digabung, karena konversi_per_kantong bisa beda tiap kolam
-        // meski jenis/ukuran/grade-nya sama.
         foreach ($items as $item) {
             $hargaMaster = DB::table('master_harga')
                 ->where('jenis_id', $item->jenis_id)
@@ -379,11 +350,6 @@ class PesananController extends Controller
                 : $item->total_ekor_aktual * $item->harga_real;
         }
 
-        // ✅ FIX: Gabungkan item dengan SKU sama (jenis+ukuran+grade sama)
-        // meski berasal dari kolam/siklus berbeda, agar tidak duplikat di nota.
-        // Nilai kuantitas & subtotal dijumlahkan; konversi_per_kantong yang
-        // ditampilkan adalah rata-rata tertimbang (hanya untuk display,
-        // bukan dipakai ulang untuk kalkulasi).
         $items = $items
             ->groupBy(function ($item) {
                 return $item->jenis_id . '|' . $item->ukuran_id . '|' . $item->grade_id;
@@ -409,7 +375,6 @@ class PesananController extends Controller
             })
             ->values();
 
-        // Agregat untuk ringkasan finansial
         $subtotalKotor   = $items->sum('subtotal_item');
         $diskonTotal     = $items->sum('diskon_pembulatan_manual') ?? 0;
         $dpDibayar       = $pesanan->nominal_dp_dibayar ?? 0;
@@ -418,7 +383,6 @@ class PesananController extends Controller
             ? $subtotalKotor - $dpDibayar
             : $totalTagihan - $dpDibayar;
 
-        // Nama kolam pertama untuk "Asal Pengambilan" di header nota
         $namaKolamPertama = $items->first()->nama_kolam ?? '-';
 
         return view('admin.pesanan.cetak_nota', compact(
@@ -428,9 +392,6 @@ class PesananController extends Controller
         ));
     }
 
-    /**
-     * FITUR SURAT JALAN LOGISTIK
-     */
     public function cetakSuratJalan(int $id): View
     {
         $pesanan = DB::table('pesanan')

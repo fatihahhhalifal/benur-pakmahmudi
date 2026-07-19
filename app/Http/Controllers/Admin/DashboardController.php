@@ -26,34 +26,28 @@ class DashboardController extends Controller
                 ->sum('bop_kolam.nominal_biaya') ?? 0;
             $totalPengeluaran = $totalModalBenih + $totalBopBerjalan;
 
-            // Omzet: EXCLUDE batal
             $totalPendapatan = DB::table('pesanan')
                 ->whereIn('status', ['proses','menunggu_kalkulasi','menunggu_pelunasan','siap_ambil','selesai'])
                 ->sum(DB::raw("CASE WHEN status='selesai' THEN total_pembayaran_final ELSE nominal_dp_dibayar END")) ?? 0;
 
-            // Antrean: hanya pending (EXCLUDE batal)
             $antreanPreorder = DB::table('pesanan')
                 ->whereIn('status', ['pending','menunggu_konfirmasi_dp'])
                 ->count();
 
-            // Proses aktif (EXCLUDE batal)
             $pesananDiproses = DB::table('pesanan')
                 ->whereIn('status', ['proses','menunggu_kalkulasi','menunggu_pelunasan','siap_ambil'])
                 ->count();
 
-            // Total order VALID (tidak termasuk batal)
             $totalOrderValid = DB::table('pesanan')
                 ->whereNotIn('status', ['batal'])
                 ->count();
 
-            // Selesai bulan ini
             $pesananSelesaiBulanIni = DB::table('pesanan')
                 ->where('status', 'selesai')
                 ->whereMonth('updated_at', now()->month)
                 ->whereYear('updated_at', now()->year)
                 ->count();
 
-            // Breakdown total order per status (exclude batal)
             $statsByStatus = DB::table('pesanan')
                 ->selectRaw("status, COUNT(*) as jumlah")
                 ->whereNotIn('status', ['batal'])
@@ -76,7 +70,6 @@ class DashboardController extends Controller
             ));
 
         } else {
-            // CUSTOMER
             $myPreordersCount = DB::table('pesanan')
                 ->where('user_id', $user->id)
                 ->whereIn('status', ['pending','menunggu_konfirmasi_dp'])
@@ -97,19 +90,16 @@ class DashboardController extends Controller
                 ->where('status', 'selesai')
                 ->sum('total_pembayaran_final') ?? 0;
 
-            // Total order customer (EXCLUDE batal)
             $myTotalOrder = DB::table('pesanan')
                 ->where('user_id', $user->id)
                 ->whereNotIn('status', ['batal'])
                 ->count();
 
-            // Butuh aksi (tagihan menunggu pelunasan)
             $myNeedActionCount = DB::table('pesanan')
                 ->where('user_id', $user->id)
                 ->where('status', 'menunggu_pelunasan')
                 ->count();
 
-            // Pesanan terbaru (EXCLUDE batal) dengan detail
             $myRecentOrders = DB::table('pesanan')
                 ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
                 ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
@@ -132,7 +122,6 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
 
-            // Hitung badge per status untuk customer
             $myStatsByStatus = DB::table('pesanan')
                 ->where('user_id', $user->id)
                 ->whereNotIn('status', ['batal'])

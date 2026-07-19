@@ -16,10 +16,6 @@ class BiayaOperasionalController extends Controller
             abort(403);
         }
 
-        // =========================================================================
-        // DATA KONSOLIDASI UNTUK TRANSAKSI YANG SUDAH SAH (DISETUJUI / VERIFIKASI)
-        // =========================================================================
-        // A. Arus Keluar Sah (BOP yang sudah di-ACC Admin)
         $pengeluaran_aktif = DB::table('bop_kolam')
             ->join('siklus_kolam', 'bop_kolam.siklus_id', '=', 'siklus_kolam.id')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
@@ -42,9 +38,6 @@ class BiayaOperasionalController extends Controller
                 DB::raw('0 as is_locked')
             );
 
-        // Modal pembelian benih adalah biaya awal siklus yang tersimpan di
-        // siklus_kolam, bukan baris fisik di bop_kolam. Masukkan sebagai jurnal
-        // virtual agar terbaca pada BOP tanpa menggandakan transaksi di database.
         $modal_benih_aktif = DB::table('siklus_kolam')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
             ->where('siklus_kolam.status', 'aktif')
@@ -66,7 +59,6 @@ class BiayaOperasionalController extends Controller
                 DB::raw('1 as is_locked')
             );
 
-        // B. Arus Masuk Sah (Omzet Preorder)
         $pendapatan_aktif = DB::table('pesanan')
             ->join('detail_pesanan', 'pesanan.id', '=', 'detail_pesanan.pesanan_id')
             ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
@@ -96,9 +88,6 @@ class BiayaOperasionalController extends Controller
             ->orderBy('tanggal', 'desc')
             ->get();
 
-        // =========================================================================
-        // DATA ANTREAN VALIDASI FINANSIAL OPERATOR (STATUS PENDING)
-        // =========================================================================
         $bop_pending = DB::table('bop_kolam')
             ->join('siklus_kolam', 'bop_kolam.siklus_id', '=', 'siklus_kolam.id')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
@@ -117,9 +106,6 @@ class BiayaOperasionalController extends Controller
             ->orderBy('tanggal', 'desc')
             ->get();
 
-        // =========================================================================
-        // DATA ARSIP SEJARAH MASA LALU (SIKLUS SELESAI / SUDAH DIKURAS)
-        // =========================================================================
         $pengeluaran_arsip = DB::table('bop_kolam')
             ->join('siklus_kolam', 'bop_kolam.siklus_id', '=', 'siklus_kolam.id')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')

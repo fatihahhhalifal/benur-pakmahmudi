@@ -9,16 +9,12 @@ use Illuminate\Support\Facades\Storage;
 
 class PengaturanTambakController extends Controller
 {
-    /**
-     * Tampilan Utama: Menangani 3 Tab Data (Jalur Folder FIXED: admin/pengaturan/index)
-     */
     public function index()
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik'])) {
             abort(403, 'Akses Ditolak.');
         }
 
-        // KOREKSI JALUR VIEW: Diarahkan ke folder 'admin.pengaturan.index' sesuai direktori Anda
         return view('admin.pengaturan.index', [
             'profil' => DB::table('profil_tambak')->first(),
             'jenis'  => DB::table('jenis_benur')->get(),
@@ -33,16 +29,13 @@ class PengaturanTambakController extends Controller
         ]);
     }
 
-    /**
-     * PROFIL & REKENING (Tab 1) - Sinkron 100% Kolam Database Riil Anda
-     */
     public function saveProfil(Request $request)
     {
         if (Auth::user()->role !== 'admin') abort(403);
 
         $validated = $request->validate([
             'nama_tambak'    => 'required|string|max:255',
-            'npwp_nib'       => 'nullable|string|max:255', // Menyediakan validasi kolom sesuai skema database riil Anda
+            'npwp_nib'       => 'nullable|string|max:255', 
             'nomor_whatsapp' => 'required|string|max:50',
             'email'          => 'required|email|max:255',
             'alamat'         => 'required|string',
@@ -65,9 +58,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Profil operasional tambak berhasil diperbarui.')->with('last_tab', 'profil');
     }
 
-    /**
-     * KRITERIA BENUR (Tab 2) - PROTEKSI INTEGRITAS DATA
-     */
     private function cekRelasi(string $tabel, int $id): bool
     {
         return DB::table('master_harga')->where($tabel, $id)->exists() ||
@@ -95,11 +85,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Kriteria jenis benur berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'jenis']);
     }
 
-    /**
-     * REVISI: storeUkuran sekarang menerima upload opsional 'foto_skala' —
-     * foto referensi ukuran (mis. PL berdampingan dengan penggaris/koin) yang
-     * berlaku untuk SEMUA kolam/siklus dengan ukuran ini (bukan per-siklus).
-     */
     public function storeUkuran(Request $request)
     {
         $request->validate([
@@ -123,10 +108,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Kategori ukuran benur baru berhasil ditambahkan.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
-    /**
-     * REVISI: updateUkuran mendukung ganti foto skala. Foto lama dihapus dari
-     * storage saat diganti agar tidak menumpuk file yatim (orphan).
-     */
     public function updateUkuran(Request $request, int $id)
     {
         $request->validate([
@@ -155,10 +136,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Kategori ukuran benur berhasil diperbarui.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
-    /**
-     * REVISI: hapus juga file foto skala dari storage saat kategori ukuran dihapus,
-     * supaya tidak menyisakan file yatim di disk.
-     */
     public function destroyUkuran(int $id)
     {
         if ($this->cekRelasi('ukuran_id', $id)) return redirect()->back()->withErrors(['gagal' => 'Data ukuran sedang digunakan pada matriks aktif hulu.']);
@@ -172,10 +149,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Kategori ukuran benur berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'ukuran']);
     }
 
-    /**
-     * Hapus khusus foto skala tanpa menghapus kategori ukurannya (dipakai
-     * tombol "Hapus Foto" di form edit ukuran, opsional untuk admin).
-     */
     public function destroyFotoSkalaUkuran(int $id)
     {
         $ukuran = DB::table('ukuran_benur')->where('id', $id)->first();
@@ -210,9 +183,6 @@ class PengaturanTambakController extends Controller
         return redirect()->back()->with('success', 'Tingkatan grade benur berhasil dihapus.')->with(['last_tab' => 'kriteria', 'last_sub_tab' => 'grade']);
     }
 
-    /**
-     * KONTRAK HARGA (Tab 3) - HARGA ACUAN TETAP PASAR HILIR
-     */
     public function storeHarga(Request $request)
     {
         $request->validate(['jenis_id' => 'required', 'ukuran_id' => 'required', 'grade_id' => 'required', 'harga_jual' => 'required|integer']);

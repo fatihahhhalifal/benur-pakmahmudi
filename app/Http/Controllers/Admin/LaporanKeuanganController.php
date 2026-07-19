@@ -10,9 +10,6 @@ use Carbon\Carbon;
 
 class LaporanKeuanganController extends Controller
 {
-    /**
-     * Tampilan Utama Laporan Keuangan Neraca Konsolidasi
-     */
     public function index(Request $request)
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik'])) {
@@ -28,9 +25,6 @@ class LaporanKeuanganController extends Controller
         return view('admin.laporan.index', compact('arusKas', 'totalPendapatan', 'totalPengeluaran', 'keuntunganBersih'));
     }
 
-    /**
-     * Cetak Semua Laporan Arus Kas Jurnal Terpadu
-     */
     public function cetakSemua(Request $request)
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik'])) {
@@ -45,9 +39,6 @@ class LaporanKeuanganController extends Controller
         return view('admin.laporan.cetak', compact('arusKas', 'judul', 'totalPendapatan', 'totalPengeluaran'));
     }
 
-    /**
-     * Cetak Buku Kas Pembantu Pendapatan (Omzet Jual Benur)
-     */
     public function cetakMasuk(Request $request)
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik'])) {
@@ -62,9 +53,6 @@ class LaporanKeuanganController extends Controller
         return view('admin.laporan.cetak', compact('arusKas', 'judul', 'totalPendapatan', 'totalPengeluaran'));
     }
 
-    /**
-     * Cetak Buku Kas Pembantu Pengeluaran (BOP Budidaya Hulu)
-     */
     public function cetakKeluar(Request $request)
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik'])) {
@@ -79,10 +67,6 @@ class LaporanKeuanganController extends Controller
         return view('admin.laporan.cetak', compact('arusKas', 'judul', 'totalPendapatan', 'totalPengeluaran'));
     }
 
-    /**
-     * Query Engine: Menggabungkan pengeluaran bop hulu dan omzet riil hilir via SQL UNION
-     * Dilengkapi dengan penyaringan koleksi data berdasarkan parameter kueri peladen
-     */
     private function getKombinasiArusDana(Request $request = null)
     {
         $pengeluaran = DB::table('bop_kolam')
@@ -99,8 +83,6 @@ class LaporanKeuanganController extends Controller
                 DB::raw("'KELUAR' as jenis_arus")
             );
 
-        // Modal awal pembelian benih disimpan di siklus_kolam. Satukan sebagai
-        // jurnal virtual agar laporan keuangan konsisten dengan jurnal BOP.
         $modalBenih = DB::table('siklus_kolam')
             ->join('master_kolam', 'siklus_kolam.kolam_id', '=', 'master_kolam.id')
             ->where('siklus_kolam.modal_awal_rupiah', '>', 0)

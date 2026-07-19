@@ -8,43 +8,12 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
-/**
- * Import pembukuan manual (kertas) Januari - Mei 2026 ke dalam sistem.
- *
- * CATATAN PENTING SEBELUM MENJALANKAN:
- * - Total BOP tiap bulan sudah di-cross-check manual dan MATCH persis dengan
- *   catatan asli (Jan 23.900.000 / Feb 26.415.000 / Mar 14.020.000 /
- *   Apr 22.025.000 / Mei 15.930.000). Lihat komentar di $dataBulanan.
- * - "Nopli Vanami" TIDAK dimasukkan sebagai baris bop_kolam biasa, tapi jadi
- *   `modal_awal_rupiah` di siklus_kolam (mengikuti cara LaporanKeuanganController
- *   menghitung pos "Modal Benih" sebagai jurnal virtual).
- * - Command ini bersifat SPLIT RATA: total BOP & Penjualan bulanan dibagi rata
- *   ke N kolam yang aktif bulan itu (dikonfirmasi user). N per bulan:
- *   Jan=10, Feb=10, Mar=6, Apr=8, Mei=6.
- * - Kolam yang dipakai = N kolam PERTAMA berdasarkan urutan id di master_kolam
- *   (asumsi, karena data historis tidak tercatat per-kolam). Edit
- *   $kolamAktifOverride di bawah kalau kenyataan beda.
- * - Ekor benur bulan April diambil dari rumus konsisten (N x 2.000.000), BUKAN
- *   dari angka "18.500" di catatan asli yang meragukan (OCR).
- * - Baris "(Kosong)" di Maret (3.050.000) dikategorikan sebagai
- *   "(Global) Lain-lain - Tidak Berketerangan (perlu ditinjau)" agar tidak
- *   hilang dari BOP, tapi WAJIB ditinjau manual oleh pemilik.
- * - "Penjualan" historis dicatat lewat 1 pesanan dummy PER KOLAM per bulan
- *   (bukan 1 pesanan gabungan), atas nama user internal "Rekap Historis
- *   Pra-Sistem" (email histori@internal.local) — bukan customer asli manapun.
- *
- * Jalankan dengan --dry-run dulu untuk lihat preview tanpa insert ke DB.
- */
 class ImportHistorisKeuanganJanMei2026 extends Command
 {
     protected $signature = 'import:historis-keuangan {--dry-run : Tampilkan preview tanpa insert ke database}';
 
     protected $description = 'Import pembukuan manual Januari-Mei 2026 (BOP, Modal Benih, Penjualan) ke sistem';
 
-    /**
-     * N kolam pertama (berdasarkan id ASC di master_kolam) yang dipakai tiap bulan.
-     * Ubah array ini kalau kamu tahu persis kolam mana saja yang aktif per bulan.
-     */
     private array $jumlahKolamPerBulan = [
         '2026-01' => 10,
         '2026-02' => 10,
@@ -57,7 +26,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
     {
         $isDryRun = (bool) $this->option('dry-run');
 
-        // Guard: cegah double-import kalau command ini pernah dijalankan sebelumnya
         $sudahAda = DB::table('pesanan')->where('nomor_invoice', 'like', 'HIST-%')->exists();
         if ($sudahAda && !$isDryRun) {
             $this->error('Terdeteksi data dengan invoice "HIST-%" sudah ada di tabel pesanan. Import dibatalkan supaya tidak dobel. Hapus data lama dulu kalau memang mau re-import.');
@@ -94,7 +62,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                 $penjualanPerKolam = $this->bagiRataDenganSisa($bulan['penjualan_total'], $n);
 
                 foreach ($kolamBulanIni as $index => $kolamId) {
-                    // 1. siklus_kolam
                     $siklusId = DB::table('siklus_kolam')->insertGetId([
                         'kolam_id' => $kolamId,
                         'jenis_id' => 1,
@@ -102,7 +69,7 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                         'grade_id' => 1,
                         'modal_awal_rupiah' => $modalPerKolam[$index],
                         'jumlah_tebar_awal' => $ekorPerKolam[$index],
-                        'stok_tersedia' => 0, // asumsi: siklus historis sudah tuntas terjual/panen
+                        'stok_tersedia' => 0,
                         'potongan_harga_manual' => 0,
                         'waktu_tabur' => $bulan['waktu_tabur'],
                         'status' => 'selesai',
@@ -111,7 +78,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                         'updated_at' => $bulan['tanggal_tercatat'],
                     ]);
 
-                    // 2. bop_kolam (biaya operasional, tidak termasuk Nopli Vanami)
                     foreach ($bulan['biaya'] as $item) {
                         $nominalPerKolam = $this->bagiRataDenganSisa($item['nominal'], $n);
                         DB::table('bop_kolam')->insert([
@@ -125,7 +91,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                         ]);
                     }
 
-                    // 3. pesanan dummy (representasi penjualan historis per kolam)
                     $noInvoice = 'HIST-' . str_replace('-', '', $bulanKey) . '-K' . $kolamId;
                     $pesananId = DB::table('pesanan')->insertGetId([
                         'user_id' => $userHistorisId,
@@ -141,7 +106,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                         'updated_at' => $bulan['tanggal_tercatat'],
                     ]);
 
-                    // 4. detail_pesanan (nilai estimasi, karena rincian sak/kantong asli tidak tercatat)
                     DB::table('detail_pesanan')->insert([
                         'pesanan_id' => $pesananId,
                         'siklus_id' => $siklusId,
@@ -188,10 +152,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
         ]);
     }
 
-    /**
-     * Bagi nominal ke N bagian serata mungkin, sisa pembulatan ditaruh di elemen terakhir
-     * supaya total tetap PERSIS sama dengan angka aslinya (penting untuk laporan keuangan).
-     */
     private function bagiRataDenganSisa(int $total, int $n): array
     {
         $bagian = intdiv($total, $n);
@@ -228,7 +188,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                 'nopli_nominal' => 9_900_000,
                 'nopli_ekor' => 20_000_000,
                 'penjualan_total' => 31_950_000,
-                // Total biaya (tanpa Nopli) harus = 14.000.000 -> + Nopli 9.900.000 = BOP 23.900.000 (match)
                 'biaya' => [
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Uang Makan', 'nominal' => 2_700_000],
                     ['kategori' => '(Global) Energi Listrik & Pompa - Listrik/ Pulsa', 'nominal' => 1_200_000],
@@ -250,7 +209,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                 'nopli_nominal' => 11_000_000,
                 'nopli_ekor' => 20_000_000,
                 'penjualan_total' => 50_350_000,
-                // Total biaya (tanpa Nopli) = 15.415.000 -> + Nopli 11.000.000 = BOP 26.415.000 (match)
                 'biaya' => [
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Uang Makan', 'nominal' => 2_700_000],
                     ['kategori' => '(Global) Energi Listrik & Pompa - Listrik/ Pulsa', 'nominal' => 1_300_000],
@@ -270,8 +228,6 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                 'nopli_nominal' => 5_500_000,
                 'nopli_ekor' => 12_000_000,
                 'penjualan_total' => 12_650_000,
-                // Total biaya (tanpa Nopli) = 8.520.000 -> + Nopli 5.500.000 = BOP 14.020.000 (match)
-                // Hasil bersih bulan ini MINUS (sesuai catatan asli: -1.370.000)
                 'biaya' => [
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Uang Makan', 'nominal' => 1_500_000],
                     ['kategori' => '(Global) Energi Listrik & Pompa - Listrik/ Pulsa', 'nominal' => 1_200_000],
@@ -281,20 +237,16 @@ class ImportHistorisKeuanganJanMei2026 extends Command
                     ['kategori' => '(Global) Obat & Desinfektan Kolam - Pupuk, Aqua', 'nominal' => 150_000],
                     ['kategori' => '(Global) Pakan - Plastik 1300, Sak 30, Karet 2', 'nominal' => 800_000],
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Upah Panen', 'nominal' => 1_000_000],
-                    // Baris tanpa keterangan di catatan asli - PERLU DITINJAU MANUAL
                     ['kategori' => '(Global) Lain-lain - Tidak Berketerangan (perlu ditinjau)', 'nominal' => 3_050_000],
                 ],
             ],
             '2026-04' => [
                 'label' => 'April 2026',
                 'waktu_tabur' => Carbon::parse('2026-04-01 06:00:00'),
-                'tanggal_tercatat' => Carbon::parse('2026-04-24 00:00:00'), // sesuai "Jum'at legi, 24 April 2026" di catatan asli
+                'tanggal_tercatat' => Carbon::parse('2026-04-24 00:00:00'), 
                 'nopli_nominal' => 8_500_000,
-                // Ekor "18.500" di catatan asli ambigu (OCR) -> pakai rumus konsisten 8 kolam x 2jt
                 'nopli_ekor' => 16_000_000,
                 'penjualan_total' => 19_050_000,
-                // Total biaya (tanpa Nopli) = 13.525.000 -> + Nopli 8.500.000 = BOP 22.025.000 (match)
-                // Hasil bersih bulan ini MINUS (sesuai catatan asli: -2.975.000)
                 'biaya' => [
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Uang Makan', 'nominal' => 2_700_000],
                     ['kategori' => '(Global) Energi Listrik & Pompa - Listrik/ Pulsa', 'nominal' => 1_200_000],
@@ -316,12 +268,10 @@ class ImportHistorisKeuanganJanMei2026 extends Command
             '2026-05' => [
                 'label' => 'Mei 2026',
                 'waktu_tabur' => Carbon::parse('2026-05-01 06:00:00'),
-                'tanggal_tercatat' => Carbon::parse('2026-05-31 00:00:00'), // tanggal tercoret/tidak jelas di catatan asli
+                'tanggal_tercatat' => Carbon::parse('2026-05-31 00:00:00'),
                 'nopli_nominal' => 5_500_000,
                 'nopli_ekor' => 12_000_000,
                 'penjualan_total' => 15_250_000,
-                // Total biaya (tanpa Nopli) = 10.430.000 -> + Nopli 5.500.000 = BOP 15.930.000 (match)
-                // Hasil bersih bulan ini MINUS (sesuai catatan asli: -680.000)
                 'biaya' => [
                     ['kategori' => '(Global) Gaji Tenaga Kerja Lapangan - Uang Makan', 'nominal' => 1_500_000],
                     ['kategori' => '(Global) Energi Listrik & Pompa - Listrik/ Pulsa', 'nominal' => 1_100_000],

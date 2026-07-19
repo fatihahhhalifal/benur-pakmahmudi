@@ -6,56 +6,22 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
-/**
- * IMPORT DATA HISTORIS PESANAN (versi sesuai format spreadsheet asli)
- * ------------------------------------------------------------------
- * Cara pakai:
- *   php artisan pesanan:import-histori storage/data_histori.csv --dry-run
- *   php artisan pesanan:import-histori storage/data_histori.csv
- *
- * Format CSV (header wajib persis nama ini, pemisah koma):
- * no,nama_file,tgl_tabur,tgl_preorder,tgl_pelunasan,nama_customer,jenis,ukuran,grade,jumlah_ekor,harga_per_ekor,diskon
- *
- * Contoh baris (boleh copy-paste langsung dari Excel, format Rp dan koma
- * desimal TIDAK perlu dibersihkan dulu, script yang urus):
- * 1,1.jpeg,20/12/2025,27/12/2025,03/01/2026,Budi,Vaname,PL5,A,2.034.000,7,Rp38.000
- *
- * ASUMSI YANG DIPAKAI (tolong konfirmasi, kalau beda kasih tahu saya):
- * 1. harga_total dihitung ulang dari jumlah_ekor x harga_per_ekor (bukan
- *    ambil kolom "Harga Total" langsung dari Excel).
- * 2. DP = 20% dari harga_total, PERSIS seperti logic konfirmasiDP() yang
- *    sudah ada di sistem (nominal_dp_dibayar = subtotal_kotor * 0.2).
- * 3. Semua baris historis = status SELESAI (sudah lunas penuh), karena
- *    semua sudah ada tanggal pelunasan.
- * 4. Karena data asli tidak punya rincian jumlah kantong/karung (cuma
- *    total ekor), kolom kantong di detail_pesanan diisi jumlah_ekor
- *    dengan konversi_per_kantong = 1. Ini AMAN untuk laporan keuangan,
- *    tapi kalau nota histori ini nanti dicetak ulang, labelnya akan
- *    tertulis "kantong" padahal sebenarnya ekor. Kalau kamu masih simpan
- *    foto nota asli (kolom nama_file), sebaiknya tetap dilampirkan
- *    terpisah untuk keperluan bukti, jangan andalkan cetak ulang dari
- *    sistem untuk data historis ini.
- * 5. nomor_invoice dibuat otomatis: INV-HIST-{no}. Kalau kamu sudah
- *    punya nomor invoice asli, tambahkan kolom nomor_invoice di CSV.
- */
 class ImportHistoriPesanan extends Command
 {
     protected $signature = 'pesanan:import-histori {file} {--dry-run} {--admin-id=1}';
     protected $description = 'Import bulk data transaksi historis (tanggal tabur, preorder, pelunasan terpisah)';
 
-    /** Parser angka Rupiah: "Rp14.238.000" atau "2.034.000" atau "6,5" -> float */
     private function parseAngka(string $raw): float
     {
         $str = trim($raw);
         $str = str_replace(['Rp', ' '], '', $str);
-        $str = str_replace('.', '', $str);   // hapus pemisah ribuan
-        $str = str_replace(',', '.', $str);  // koma desimal -> titik
+        $str = str_replace('.', '', $str);  
+        $str = str_replace(',', '.', $str);  
         return $str === '' ? 0.0 : (float) $str;
     }
 
     private function parseTanggal(string $raw): Carbon
     {
-        // Format asli: d/m/Y (contoh: 20/12/2025)
         return Carbon::createFromFormat('d/m/Y', trim($raw))->startOfDay()->addHours(12);
     }
 
@@ -120,8 +86,6 @@ class ImportHistoriPesanan extends Command
 
             DB::beginTransaction();
             try {
-                // 1. Cari atau buat user customer (email digenerate konsisten per nama
-                //    supaya transaksi dari customer yang sama tetap 1 akun)
                 $emailSlug = strtolower(preg_replace('/\s+/', '', $data['nama_customer'])) . '@histori.local';
                 $userId = DB::table('users')->where('email', $emailSlug)->value('id');
                 if (!$userId) {
@@ -135,7 +99,6 @@ class ImportHistoriPesanan extends Command
                     ]);
                 }
 
-                // 2. Cari atau buat referensi jenis/ukuran/grade
                 $jenisId  = DB::table('jenis_benur')->where('nama', $data['jenis'])->value('id')
                             ?? DB::table('jenis_benur')->insertGetId(['nama' => $data['jenis'], 'created_at' => $tglPreorder, 'updated_at' => $tglPreorder]);
                 $ukuranId = DB::table('ukuran_benur')->where('ukuran', $data['ukuran'])->value('id')
@@ -143,8 +106,6 @@ class ImportHistoriPesanan extends Command
                 $gradeId  = DB::table('grade_benur')->where('nama_grade', $data['grade'])->value('id')
                             ?? DB::table('grade_benur')->insertGetId(['nama_grade' => $data['grade'], 'created_at' => $tglPreorder, 'updated_at' => $tglPreorder]);
 
-                // 3. Kolam arsip bersama (stok tidak dipotong, tidak relevan
-                //    lagi ke stok aktif karena datanya sudah lama)
                 $kolamArsipId = DB::table('master_kolam')->where('nama_kolam', 'ARSIP HISTORIS')->value('id');
                 if (!$kolamArsipId) {
                     $kolamArsipId = DB::table('master_kolam')->insertGetId([
@@ -155,8 +116,6 @@ class ImportHistoriPesanan extends Command
                     ]);
                 }
 
-                // Siklus dibuat PER TRANSAKSI (bukan digabung per SKU) supaya
-                // tgl_tabur asli masing-masing transaksi tetap akurat.
                 $siklusId = DB::table('siklus_kolam')->insertGetId([
                     'kolam_id'              => $kolamArsipId,
                     'jenis_id'              => $jenisId,
@@ -173,7 +132,6 @@ class ImportHistoriPesanan extends Command
                     'updated_at'            => $tglTabur,
                 ]);
 
-                // 4. Insert pesanan (status langsung selesai/lunas)
                 $pesananId = DB::table('pesanan')->insertGetId([
                     'user_id'                 => $userId,
                     'nomor_invoice'            => $nomorInvoice,
@@ -187,9 +145,6 @@ class ImportHistoriPesanan extends Command
                     'updated_at'               => $tglPelunasan,
                 ]);
 
-                // 5. Insert detail_pesanan
-                //    Catatan: tidak ada rincian kantong di data asli, jadi
-                //    jumlah_ekor dipakai sebagai "kantong" dengan konversi 1.
                 DB::table('detail_pesanan')->insert([
                     'pesanan_id'                => $pesananId,
                     'siklus_id'                 => $siklusId,
@@ -206,7 +161,6 @@ class ImportHistoriPesanan extends Command
                     'updated_at'                => $tglPelunasan,
                 ]);
 
-                // 6. Log jejak audit
                 DB::table('log_kalkulasi_pesanan')->insert([
                     'pesanan_id'   => $pesananId,
                     'user_id'      => $adminId,

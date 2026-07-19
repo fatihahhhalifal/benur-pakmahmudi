@@ -91,8 +91,6 @@ class MidtransDpController extends Controller
             ],
         ];
 
-        // DEBUG: dicatat sementara supaya bisa dilampirkan ke tiket support Midtrans.
-        // Server key TIDAK ikut tercatat di sini karena tidak pernah dimasukkan ke $chargePayload.
         Log::info('Midtrans Full Charge Request (buatToken DP)', [
             'endpoint' => \Midtrans\Config::$isProduction
                 ? 'https://app.midtrans.com/snap/v1/transactions'
@@ -248,7 +246,6 @@ class MidtransDpController extends Controller
             ],
         ];
 
-        // DEBUG: dicatat sementara supaya bisa dilampirkan ke tiket support Midtrans.
         Log::info('Midtrans Full Charge Request (buatToken Pelunasan)', [
             'endpoint' => \Midtrans\Config::$isProduction
                 ? 'https://app.midtrans.com/snap/v1/transactions'
@@ -383,19 +380,7 @@ class MidtransDpController extends Controller
     }
 
     /**
-     * Menerapkan pembayaran DP yang sukses ke pesanan.
-     *
-     * Menangani 1 kasus khusus: pesanan yang SEMPAT auto-batal karena kedaluwarsa
-     * (1 jam tanpa bayar), tapi ternyata pembayarannya baru sukses/terkonfirmasi
-     * SETELAH auto-batal itu terjadi (race condition antara timeout & notifikasi
-     * Midtrans yang telat sampai). Dalam kasus ini pesanan DIHIDUPKAN KEMBALI ke
-     * 'proses', karena uang customer sudah benar-benar masuk.
-     *
-     * Pesanan yang dibatalkan MANUAL oleh admin (keterangan_batal diawali
-     * "Dibatalkan Admin:") TIDAK ikut dihidupkan otomatis di sini — itu keputusan
-     * final admin, bukan soal timeout sistem.
-     *
-     * @return bool true kalau baru saja diterapkan/dihidupkan, false kalau sudah pernah diproses sebelumnya (idempoten)
+     * @return bool
      */
     private function terapkanSuksesDp(object $pesanan, int $grossAmount, string $paymentType, string $orderId, ?int $userId): bool
     {

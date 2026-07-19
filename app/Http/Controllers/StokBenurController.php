@@ -15,12 +15,8 @@ use Illuminate\Support\Facades\Auth;
 
 class StokBenurController extends Controller
 {
-    /**
-     * Tampilan Monitoring Stok Kolam (Bisa diakses Admin, Pemilik, Operator)
-     */
     public function index(Request $request)
     {
-        // Blokir Customer total (403) jika mencoba menembak URL ini
         if (Auth::user()->isCustomer()) {
             abort(403, 'Akses Ditolak. Halaman ini hanya diperuntukkan bagi internal staff tambak.');
         }
@@ -84,12 +80,8 @@ class StokBenurController extends Controller
         return view('stok.index', compact('stok', 'jenis', 'ukuran', 'grade'));
     }
 
-    /**
-     * Aksi Tabur Bibit / Tambah Kolam Baru
-     */
     public function store(Request $request)
     {
-        // Pemilik dan Customer dilarang memanipulasi input produksi
         if (Auth::user()->isPemilik() || Auth::user()->isCustomer()) {
             abort(403, 'Aksi Ditolak. Otoritas Anda hanya sebatas memantau kargo logistik.');
         }
@@ -115,12 +107,8 @@ class StokBenurController extends Controller
         return back()->with('success', 'Bibit berhasil ditabur! Total: ' . number_format($data['jumlah_ekor'], 0, ',', '.') . ' ekor.');
     }
 
-    /**
-     * Perbarui Kriteria Data Stok Kolam
-     */
     public function update(Request $request, $id)
     {
-        // Hanya Admin Tambak & Operator lapangan yang punya hak mengubah kargo kolam
         if (Auth::user()->isPemilik() || Auth::user()->isCustomer()) {
             abort(403, 'Aksi Ditolak. Anda tidak mempunyai hak akses merubah data fisik kolam.');
         }
@@ -150,9 +138,6 @@ class StokBenurController extends Controller
         return back()->with('success', "Data Kolam $stok->nama_kolam telah diperbarui.");
     }
 
-    /**
-     * Menghapus Record Kolam Produksi (Ketat: Hanya Admin Utama)
-     */
     public function destroy(StokBenur $stok)
     {
         if (!Auth::user()->isAdmin()) {
@@ -167,9 +152,6 @@ class StokBenurController extends Controller
         return back()->with('success', 'Data stok dan file foto berhasil dihapus.');
     }
 
-    /**
-     * Input Log Sampling Perkembangan Benur (Diizinkan: Admin & Operator)
-     */
     public function storeSampling(Request $request, $id)
     {
         if (Auth::user()->isPemilik() || Auth::user()->isCustomer()) {
@@ -203,9 +185,6 @@ class StokBenurController extends Controller
         return back()->with('success', "Sampling berhasil disimpan! SR: " . number_format($srFinal, 2) . "%");
     }
 
-    /**
-     * Update Log Riwayat Sampling (Diizinkan: Admin & Operator)
-     */
     public function updateSampling(Request $request, $id)
     {
         if (Auth::user()->isPemilik() || Auth::user()->isCustomer()) {

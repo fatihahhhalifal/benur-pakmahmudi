@@ -68,13 +68,6 @@ class CheckoutController extends Controller
         return view('customer.checkout.index', compact('items', 'grandTotal', 'profilTambak'));
     }
 
-    /**
-     * Membuat pesanan dari keranjang lalu langsung mengembalikan JSON (bukan redirect),
-     * karena halaman checkout memanggil endpoint ini via fetch/AJAX dan butuh pesanan_id
-     * untuk langsung meminta Snap Token Midtrans di halaman yang sama — tanpa reload/redirect.
-     * Tidak ada lagi upload bukti transfer di form checkout — DP sepenuhnya dibayar via
-     * Midtrans, jadi validasi bukti_transfer sudah tidak relevan lagi di titik ini.
-     */
     public function processPayment(Request $request): JsonResponse
     {
         $userId = Auth::id();
@@ -100,9 +93,6 @@ class CheckoutController extends Controller
             ]);
 
             foreach ($cartItems as $item) {
-                // kolam_id di keranjang hanyalah penanda produk internal. Ambil
-                // semua kolam yang menjual SKU serupa agar customer tidak perlu
-                // memilih kolam dan pesanan bisa dialokasikan otomatis.
                 $produkAcuan = DB::table('siklus_kolam')
                     ->where('kolam_id', $item->kolam_id)
                     ->where('status', 'aktif')

@@ -36,9 +36,6 @@ class KatalogController extends Controller
 
     private function getKatalogData()
     {
-        // Satu produk katalog dapat berasal dari beberapa kolam. Kolam hanya
-        // dipakai sebagai sumber stok internal; customer berbelanja berdasarkan
-        // jenis, ukuran, grade, dan harga.
         $katalog = DB::table('siklus_kolam')
             ->leftJoin('jenis_benur', 'siklus_kolam.jenis_id', '=', 'jenis_benur.id')
             ->leftJoin('ukuran_benur', 'siklus_kolam.ukuran_id', '=', 'ukuran_benur.id')
@@ -74,8 +71,6 @@ class KatalogController extends Controller
             )
             ->get();
 
-        // Kuota pesanan yang masih berjalan harus dikurangi dari stok gabungan,
-        // bukan hanya dari salah satu kolam perwakilan.
         $booking = DB::table('detail_pesanan')
             ->join('pesanan', 'detail_pesanan.pesanan_id', '=', 'pesanan.id')
             ->join('siklus_kolam', 'detail_pesanan.siklus_id', '=', 'siklus_kolam.id')
@@ -115,9 +110,6 @@ class KatalogController extends Controller
 
     public function show(int $siklus_id): View
     {
-        // URL detail membawa satu siklus perwakilan, tetapi produk yang dilihat
-        // customer adalah SKU gabungan seluruh kolam aktif dengan jenis, ukuran,
-        // dan grade yang sama.
         $siklusAcuan = DB::table('siklus_kolam')
             ->where('id', $siklus_id)
             ->where('status', 'aktif')
@@ -171,8 +163,6 @@ class KatalogController extends Controller
 
         if (!$produk) abort(404);
 
-        // Tetap gunakan satu kolam/siklus perwakilan untuk form dan galeri;
-        // pemecahan pesanan ke kolam-kolam lain dilakukan otomatis saat checkout.
         $produk->id = $siklusAcuan->id;
         $produk->kolam_id = $siklusAcuan->kolam_id;
 
@@ -337,8 +327,6 @@ class KatalogController extends Controller
                 'ukuran_benur.ukuran as label_ukuran',
                 DB::raw('MAX(master_harga.harga_jual) as harga_live')
             )
-            // Satu item customer = satu SKU. Bila alokasi internal tersebar
-            // ke beberapa kolam, volume tetap tampil sebagai satu pesanan utuh.
             ->groupBy(
                 'siklus_kolam.jenis_id',
                 'siklus_kolam.ukuran_id',
@@ -350,15 +338,6 @@ class KatalogController extends Controller
             ->map(function($item) use ($pesanan) {
                 $hargaAktif = $pesanan->is_harga_dikunci ? $item->harga_per_ekor_kontrak : ($item->harga_live ?? $item->harga_per_ekor_kontrak ?? 0);
                 $item->subtotal_kotor = ($item->total_kantong_hitung * $item->konversi_per_kantong) * $hargaAktif;
-
-                // FIX: total_kantong_hitung adalah SUM langsung dari seluruh baris split
-                // per-kolam, jadi nilainya sudah pasti benar (dan ekor/rupiah ikut benar).
-                // Tapi jumlah_sak_dipesan & kantong_eceran_dipesan sebelumnya di-SUM()
-                // secara terpisah per baris (hasil intdiv/modulo masing-masing kolam),
-                // sehingga bisa TIDAK konsisten bila sisa "kantong eceran" antar kolam
-                // totalnya melebihi 45 (butuh carry ke sak, tapi SUM tidak melakukan itu).
-                // Solusi: normalisasi ulang breakdown sak/eceran dari total_kantong_hitung
-                // gabungan, bukan dari SUM masing-masing kolom hasil split.
                 $item->jumlah_sak_dipesan     = intdiv($item->total_kantong_hitung, 45);
                 $item->kantong_eceran_dipesan = $item->total_kantong_hitung % 45;
 
@@ -368,7 +347,6 @@ class KatalogController extends Controller
         $grandTotal = $items->sum('subtotal_kotor');
         $profilTambak = DB::table('profil_tambak')->first();
 
-        // REVISI 3 & 6: Ambil riwayat sampling untuk setiap siklus dalam pesanan
         $riwayatSampling = collect();
         foreach ($items as $item) {
             $samplings = DB::table('riwayat_sampling')
@@ -379,7 +357,6 @@ class KatalogController extends Controller
                 ->get();
             $riwayatSampling = $riwayatSampling->merge($samplings);
         }
-        // Sampling terbaru (untuk notifikasi perubahan)
         $samplingTerbaru = $riwayatSampling->sortByDesc('tanggal_sampling')->first();
 
         return view('customer.pesanan.show', compact('pesanan', 'items', 'grandTotal', 'profilTambak', 'riwayatSampling', 'samplingTerbaru'));

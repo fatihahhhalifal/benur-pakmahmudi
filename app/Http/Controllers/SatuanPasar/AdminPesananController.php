@@ -12,12 +12,8 @@ use Illuminate\View\View;
 
 class AdminPesananController extends Controller
 {
-    /**
-     * Menampilkan daftar seluruh antrean preorder masuk untuk Admin & Operator
-     */
     public function index(): View
     {
-        // Otomatis batalkan pesanan pending yang sudah lewat dari 1 jam
         $this->autoCancelExpiredOrders();
 
         $user = Auth::user();
@@ -52,7 +48,6 @@ class AdminPesananController extends Controller
                 DB::raw('DATEDIFF(NOW(), siklus_kolam.waktu_tabur) as live_doc'),
             );
 
-        // Operator hanya lihat status proses + riwayat yang sudah dikerjakannya
         if ($user->role === 'operator') {
             $query->whereIn('pesanan.status', [
                 'proses',
@@ -69,10 +64,8 @@ class AdminPesananController extends Controller
             ->orderBy('pesanan.created_at', 'desc')
             ->get();
 
-        // Ambil semua log sekaligus — TIDAK N+1
         $pesananIds = $pesanan->pluck('id')->toArray();
 
-        // log_kalkulasi: semua aksi KECUALI timbang_muat (untuk modal kalkulasi admin)
         $logKalkulasi = DB::table('log_kalkulasi_pesanan')
             ->join('users', 'log_kalkulasi_pesanan.user_id', '=', 'users.id')
             ->whereIn('log_kalkulasi_pesanan.pesanan_id', $pesananIds)
@@ -88,7 +81,6 @@ class AdminPesananController extends Controller
             ->get()
             ->groupBy('pesanan_id');
 
-        // log_timbang_muat: HANYA aksi timbang_muat (untuk kolom Detail Pesanan)
         $logTimbang = DB::table('log_kalkulasi_pesanan')
             ->join('users', 'log_kalkulasi_pesanan.user_id', '=', 'users.id')
             ->whereIn('log_kalkulasi_pesanan.pesanan_id', $pesananIds)
@@ -104,13 +96,11 @@ class AdminPesananController extends Controller
             ->get()
             ->groupBy('pesanan_id');
 
-        // Inject log ke tiap pesanan
         $pesanan->each(function ($p) use ($logKalkulasi, $logTimbang) {
             $p->log_kalkulasi        = $logKalkulasi->get($p->id, collect());
             $p->log_timbang_muat_raw = $logTimbang->get($p->id, collect());
         });
 
-        // Statistik akurat per status
         $stats = DB::table('pesanan')
             ->selectRaw("
                 COUNT(*) as total,
@@ -127,16 +117,6 @@ class AdminPesananController extends Controller
         return view('admin.pesanan.index', compact('pesanan', 'stats'));
     }
 
-    /**
-     * TAHAP 1 (OPERATOR / ADMIN): Input aktual fisik yang dimuat ke truk
-     * aksi log = 'timbang_muat' agar terbaca di kolom Detail Pesanan
-     *
-     * PENTING:
-     * - 'konversi_per_kantong' adalah snapshot konversi BOOKING AWAL (saat checkout)
-     *   dan TIDAK PERNAH diubah lagi setelah pesanan dibuat.
-     * - 'konversi_per_kantong_aktual' adalah konversi yang berlaku untuk FISIK RIIL
-     *   hasil timbang muat, dan boleh berbeda dari konversi booking awal.
-     */
     public function inputMuat(Request $request, int $id): RedirectResponse
     {
         $request->validate([
@@ -147,10 +127,8 @@ class AdminPesananController extends Controller
 
         return DB::transaction(function () use ($request, $id) {
 
-            // Ambil data lama sebelum diubah
             $detailLama = DB::table('detail_pesanan')->where('id', $request->detail_id)->first();
 
-            // Konversi booking awal TIDAK BOLEH disentuh
             $konversiAwal = $detailLama->konversi_per_kantong;
 
             $konversiAktualLama = $detailLama->konversi_per_kantong_aktual ?? $konversiAwal;
@@ -162,7 +140,6 @@ class AdminPesananController extends Controller
             $ekorBaru           = $kantongBaru * $konversiAktualBaru;
             $adaPerubahan       = ($konversiAktualLama != $konversiAktualBaru) || ($kantongLama != $kantongBaru);
 
-            // 1. Update fisik muatan. 'konversi_per_kantong' (booking awal) tidak ikut diupdate.
             DB::table('detail_pesanan')->where('id', $request->detail_id)->update([
                 'total_kantong_riil_muat'     => $kantongBaru,
                 'konversi_per_kantong_aktual' => $konversiAktualBaru,
@@ -170,9 +147,6 @@ class AdminPesananController extends Controller
                 'updated_at'                  => now()
             ]);
 
-            // 2. Lempar ke tahap kalkulasi Admin HANYA jika SEMUA kolam pada pesanan ini
-            //    sudah ditimbang muat. Jika pesanan berisi >1 kolam dan masih ada yang
-            //    belum ditimbang, status tetap 'proses' sampai kolam terakhir selesai.
             $belumTimbang = DB::table('detail_pesanan')
                 ->where('pesanan_id', $id)
                 ->whereNull('waktu_timbang_muat')
@@ -185,7 +159,6 @@ class AdminPesananController extends Controller
                 ]);
             }
 
-            // 3. Log dengan aksi 'timbang_muat' — penting agar muncul di riwayat muat
             DB::table('log_kalkulasi_pesanan')->insert([
                 'pesanan_id'   => $id,
                 'user_id'      => Auth::id(),
@@ -215,14 +188,6 @@ class AdminPesananController extends Controller
         });
     }
 
-    /**
-     * TAHAP 2 (ADMIN): Kalkulasi tagihan SEMUA KOLAM dalam 1 pesanan sekaligus,
-     * tentukan diskon gabungan, terbitkan invoice & POTONG STOK tiap kolam.
-     *
-     * Aman dilakukan sekaligus (bukan per-kolam) karena syarat status pesanan
-     * naik ke 'menunggu_kalkulasi' adalah SEMUA kolam sudah ditimbang muat —
-     * jadi saat method ini dipanggil, data fisik semua kolam sudah lengkap.
-     */
     public function kalkulasiFinal(Request $request, int $id): RedirectResponse
     {
         $request->validate([
@@ -238,14 +203,10 @@ class AdminPesananController extends Controller
             $isBarisPertama          = true;
 
             foreach ($semuaDetail as $detailPesanan) {
-                // Gunakan konversi aktual hasil timbang muat (fallback ke konversi booking awal jika belum diisi)
                 $konversiAktual    = $detailPesanan->konversi_per_kantong_aktual ?? $detailPesanan->konversi_per_kantong;
                 $totalEkorAktual   = $detailPesanan->total_kantong_riil_muat * $konversiAktual;
                 $hargaKontrak      = $detailPesanan->harga_per_ekor_kontrak;
                 $subtotalKotorBaru = $totalEkorAktual * $hargaKontrak;
-
-                // Diskon gabungan dari admin dicatat pada baris pertama saja, supaya SUM()
-                // di seluruh pesanan tetap benar (tidak dobel) dan tidak perlu kolom baru.
                 $diskonUntukBarisIni = $isBarisPertama ? $request->diskon_pembulatan : 0;
 
                 DB::table('detail_pesanan')->where('id', $detailPesanan->id)->update([
@@ -304,9 +265,6 @@ class AdminPesananController extends Controller
         });
     }
 
-    /**
-     * TAHAP 3 (ADMIN): Validasi bukti pelunasan dan Tutup Pesanan (NOTA 2)
-     */
     public function validasiPelunasan(Request $request, int $id): RedirectResponse
     {
         DB::table('pesanan')->where('id', $id)->update([
@@ -318,9 +276,6 @@ class AdminPesananController extends Controller
         return redirect()->back()->with('with_invoice_id', $id)->with('success', 'Pelunasan diverifikasi! SURAT JALAN & NOTA LUNAS resmi diterbitkan.');
     }
 
-    /**
-     * Batalkan Pesanan oleh Admin dengan Alasan Rasional
-     */
     public function batalkanOlehAdmin(Request $request, int $id): RedirectResponse
     {
         $request->validate([
@@ -336,9 +291,6 @@ class AdminPesananController extends Controller
         return redirect()->back()->with('success', 'Pesanan dibatalkan. Kuota draf air dilepas kembali.');
     }
 
-    /**
-     * Proteksi Otomatis Pembersih Draf Hangus > 1 Jam Tanpa DP
-     */
     private function autoCancelExpiredOrders(): void
     {
         DB::table('pesanan')

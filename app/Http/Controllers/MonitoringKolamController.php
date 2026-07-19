@@ -12,9 +12,6 @@ use Illuminate\View\View;
 
 class MonitoringKolamController extends Controller
 {
-    /**
-     * TAMPILAN UTAMA MENU MONITORING STOK KOLAM
-     */
     public function index(): View
     {
         if (!in_array(Auth::user()->role, ['admin', 'pemilik', 'operator'])) {
@@ -64,7 +61,6 @@ class MonitoringKolamController extends Controller
                     $item->total_booked_ekor = $totalBookedEkor;
                     $item->sisa_kuota_bebas = $item->stok_tersedia - $totalBookedEkor;
 
-                    // FIX PENTING: Hanya jumlahkan BOP yang statusnya SUDAH DISETUJUI ADMIN
                     $item->total_bop_keluar = DB::table('bop_kolam')
                         ->where('siklus_id', $item->siklus_id)
                         ->where('status', 'disetujui') 
@@ -78,8 +74,6 @@ class MonitoringKolamController extends Controller
                 return $item;
             });
 
-        // FIX PENTING: Saat menarik log daftar BOP untuk pop-up modal Kelola BOP di monitoring kolam, 
-        // hanya tampilkan log yang sudah 'disetujui' agar tabel tidak tercampur data gantung.
         $bop_list = DB::table('bop_kolam')
             ->where('status', 'disetujui')
             ->get();
@@ -108,9 +102,6 @@ class MonitoringKolamController extends Controller
         return view('admin.kolam.index', compact('kolam', 'bop_list', 'sampling_list', 'all_bookings', 'list_jenis', 'list_ukuran', 'list_grade'));
     }
 
-    /**
-     * CRUD MASTER FISIK KOLAM
-     */
     public function storeKolam(Request $request): RedirectResponse
     {
         $request->validate([
@@ -151,9 +142,6 @@ class MonitoringKolamController extends Controller
         return redirect()->back()->with('success', 'Master fisik kolam berhasil dihapus dari sistem.');
     }
 
-    /**
-     * OPERASIONAL SIKLUS (TEBAR BARU)
-     */
     public function storeTebar(Request $request): RedirectResponse
     {
         $masterKolam = DB::table('master_kolam')->where('id', $request->kolam_id)->first();
@@ -188,15 +176,11 @@ class MonitoringKolamController extends Controller
         return redirect()->back()->with('success', 'Parameter penaburan siklus kolam berhasil diperbarui.');
     }
 
-    /**
-     * MANAJEMEN FINANSIAL BOP FIELD
-     */
     public function storeBOP(Request $request): RedirectResponse
     {
         $request->validate(['siklus_id' => 'required', 'keterangan' => 'required', 'nominal' => 'required|numeric']);
         $keteranganFinal = $request->keterangan . ' - ' . $request->keterangan_lain;
         
-        // Logika Aturan Otorisasi
         $statusAwal = (Auth::user()->role === 'operator') ? 'pending' : 'disetujui';
 
         if ($request->siklus_id === 'global') {
@@ -211,7 +195,6 @@ class MonitoringKolamController extends Controller
                 ]);
             }
             
-            // Redirect diarahkan tetap ke halaman yang sama (Monitoring Kolam) tapi bawa pesan sukses
             $pesan = ($statusAwal === 'pending') ? 'Pengajuan logistik Global masuk ke antrean persetujuan Admin.' : 'BOP Global berhasil diterapkan ke semua kolam aktif.';
             return redirect()->back()->with('success', $pesan);
         } else {
@@ -220,7 +203,6 @@ class MonitoringKolamController extends Controller
                 'status' => $statusAwal, 'waktu_pencatatan' => now(), 'created_at' => now(), 'updated_at' => now()
             ]);
             
-            // Redirect diarahkan tetap ke halaman yang sama (Monitoring Kolam) tapi bawa pesan sukses
             $pesan = ($statusAwal === 'pending') ? 'Pengajuan logistik kolam masuk ke antrean persetujuan Admin.' : 'BOP Kolam berhasil diterapkan.';
             return redirect()->back()->with('success', $pesan);
         }
@@ -241,16 +223,12 @@ class MonitoringKolamController extends Controller
         return redirect()->back()->with('success', 'Catatan pengeluaran BOP berhasil dihapus.');
     }
 
-    // Fungsi ACC ini dipanggil dari menu Jurnal Biaya, jadi redirectnya tetap ke Jurnal Validasi
     public function accBOP(int $id): RedirectResponse
     {
         DB::table('bop_kolam')->where('id', $id)->update(['status' => 'disetujui', 'updated_at' => now()]);
         return redirect('/biaya?tab=validasi')->with('success', 'Pengajuan BOP lapangan berhasil disetujui & resmi tercatat di neraca berjalan.');
     }
 
-    /**
-     * SAMPLING SEROKAN LAPANGAN (MUTASI UPLOAD REAL-TIME)
-     */
     public function storeSampling(Request $request): RedirectResponse
     {
         if (!in_array(Auth::user()->role, ['admin', 'operator'])) return redirect()->back()->withErrors(['gagal' => 'Akses ditolak.']);
@@ -267,7 +245,6 @@ class MonitoringKolamController extends Controller
             $pathFileFoto = $request->file('foto_sampling')->store('sampling_realtime', 'public');
         }
 
-        // REVISI 2: Gunakan jumlah_ekor dari input, bukan hardcode 50
         $jumlahEkor = $request->jumlah_ekor_sampling ?? 50;
 
         DB::table('riwayat_sampling')->insert([

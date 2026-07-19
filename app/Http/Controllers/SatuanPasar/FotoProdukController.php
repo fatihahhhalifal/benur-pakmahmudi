@@ -10,9 +10,6 @@ use Illuminate\Support\Facades\Storage;
 
 class FotoProdukController extends Controller
 {
-    /**
-     * Upload foto produk per kategori
-     */
     public function upload(Request $request, int $siklusId)
     {
         $request->validate([
@@ -29,7 +26,6 @@ class FotoProdukController extends Controller
         $siklus = DB::table('siklus_kolam')->where('id', $siklusId)->first();
         if (!$siklus) abort(404);
 
-        // Hapus foto lama dengan kategori yang sama (1 kategori = 1 foto)
         $fotoLama = DB::table('foto_produk_siklus')
             ->where('siklus_id', $siklusId)
             ->where('kategori', $request->kategori)
@@ -44,7 +40,6 @@ class FotoProdukController extends Controller
             ->where('kategori', $request->kategori)
             ->delete();
 
-        // Upload foto baru
         $path = $request->file('foto')->store('foto_produk', 'public');
 
         DB::table('foto_produk_siklus')->insert([
@@ -60,9 +55,6 @@ class FotoProdukController extends Controller
         return redirect()->back()->with('success', 'Foto berhasil diupload.');
     }
 
-    /**
-     * Hapus foto produk
-     */
     public function hapus(int $id)
     {
         $foto = DB::table('foto_produk_siklus')->where('id', $id)->first();
